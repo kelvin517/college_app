@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
 import 'dart:convert';
 
 class StudentDashboard extends StatefulWidget {
@@ -15,10 +14,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
   int _selectedIndex = 0;
   Map<String, dynamic>? _studentProfile;
 
-  // College Selection Fields
+  // College Selection Fields - FIXED
   List<Map<String, dynamic>> _allColleges = [];
   List<Map<String, dynamic>> _filteredColleges = [];
   String _searchQuery = '';
+  bool _isLoadingColleges = false;
+  final Set<String> _selectedColleges = {}; // For multi-select feature
 
   // Feedback Form Controllers
   final TextEditingController _titleController = TextEditingController();
@@ -29,6 +30,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
   void initState() {
     super.initState();
     _loadStudentProfile();
+    _loadColleges(); // Load colleges on init
   }
 
   @override
@@ -57,6 +59,62 @@ class _StudentDashboardState extends State<StudentDashboard> {
     }
   }
 
+  // FIXED: College loading method
+  Future<void> _loadColleges() async {
+    setState(() => _isLoadingColleges = true);
+    try {
+      final response = await supabase
+          .from('colleges')
+          .select('*')
+          .eq('is_active', true)
+          .order('name', ascending: true);
+
+      setState(() {
+        _allColleges = List<Map<String, dynamic>>.from(response);
+        _filteredColleges = List.from(_allColleges);
+        _isLoadingColleges = false;
+      });
+    } catch (e) {
+      print('Error loading colleges: $e');
+      setState(() {
+        _allColleges = [];
+        _filteredColleges = [];
+        _isLoadingColleges = false;
+      });
+    }
+  }
+
+  // FIXED: Filter method with real-time updates
+  void _filterColleges(String query) {
+    setState(() {
+      _searchQuery = query;
+      if (query.isEmpty) {
+        _filteredColleges = List.from(_allColleges);
+      } else {
+        _filteredColleges = _allColleges.where((college) {
+          final name = college['name']?.toString().toLowerCase() ?? '';
+          final location = college['location']?.toString().toLowerCase() ?? '';
+          final courses = college['courses']?.toString().toLowerCase() ?? '';
+          final description =
+              college['description']?.toString().toLowerCase() ?? '';
+
+          return name.contains(query.toLowerCase()) ||
+              location.contains(query.toLowerCase()) ||
+              courses.contains(query.toLowerCase()) ||
+              description.contains(query.toLowerCase());
+        }).toList();
+      }
+    });
+  }
+
+  // FIXED: Clear search
+  void _clearSearch() {
+    setState(() {
+      _searchQuery = '';
+      _filteredColleges = List.from(_allColleges);
+    });
+  }
+
   // Navigation items
   final List<Map<String, dynamic>> _navItems = [
     {'icon': Icons.home, 'label': 'Home'},
@@ -69,18 +127,34 @@ class _StudentDashboardState extends State<StudentDashboard> {
   @override
   Widget build(BuildContext context) {
     final user = supabase.auth.currentUser;
+    final mediaQuery = MediaQuery.of(context);
+    final screenWidth = mediaQuery.size.width;
+    final isSmallScreen = screenWidth < 600;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Student Dashboard'),
+        title: Text(
+          _navItems[_selectedIndex]['label'],
+          style: TextStyle(
+            fontSize: isSmallScreen ? 18 : 20,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.notifications),
+            icon: const Icon(Icons.notifications_outlined),
             onPressed: _showNotifications,
+            tooltip: 'Notifications',
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(),
           ),
           IconButton(
-            icon: const Icon(Icons.logout),
+            icon: const Icon(Icons.logout_outlined),
             onPressed: () => _logout(context),
+            tooltip: 'Logout',
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(),
           ),
         ],
       ),
@@ -98,8 +172,15 @@ class _StudentDashboardState extends State<StudentDashboard> {
       floatingActionButton: _selectedIndex == 2
           ? FloatingActionButton.extended(
               onPressed: _startQuickTest,
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('Quick Test'),
+              icon: const Icon(Icons.play_arrow, size: 18),
+              label: const Text(
+                'Quick Test',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
             )
           : null,
     );
@@ -107,82 +188,139 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   Widget _buildDrawer(User? user) {
     return Drawer(
-      child: ListView(
-        padding: EdgeInsets.zero,
+      elevation: 0,
+      child: Column(
         children: [
-          DrawerHeader(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Colors.blue.shade700, Colors.blue.shade900],
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.end,
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
               children: [
-                CircleAvatar(
-                  backgroundColor: Colors.white,
-                  radius: 30,
-                  child: Text(
-                    user?.email?.substring(0, 1).toUpperCase() ?? 'S',
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Colors.blue.shade700, Colors.blue.shade900],
+                    ),
+                  ),
+                  child: SafeArea(
+                    bottom: false,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          CircleAvatar(
+                            backgroundColor: Colors.white,
+                            radius: 30,
+                            child: Text(
+                              user?.email?.substring(0, 1).toUpperCase() ?? 'S',
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue.shade700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            user?.email ?? 'Student',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _studentProfile?['name'] ?? 'Student Account',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 14,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 10),
-                Text(
-                  user?.email ?? 'Student',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
+                ..._navItems.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final item = entry.value;
+                  return ListTile(
+                    leading: Icon(
+                      item['icon'],
+                      color: _selectedIndex == index
+                          ? Colors.blue
+                          : Colors.grey,
+                    ),
+                    title: Text(
+                      item['label'],
+                      style: TextStyle(
+                        color: _selectedIndex == index
+                            ? Colors.blue
+                            : Colors.black87,
+                        fontWeight: _selectedIndex == index
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                      ),
+                    ),
+                    selected: _selectedIndex == index,
+                    selectedTileColor: Colors.blue.shade50,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    onTap: () {
+                      setState(() => _selectedIndex = index);
+                      Navigator.pop(context);
+                    },
+                  );
+                }),
+                const Divider(height: 24),
+                ListTile(
+                  leading: const Icon(
+                    Icons.settings_outlined,
+                    color: Colors.grey,
                   ),
-                  overflow: TextOverflow.ellipsis,
+                  title: const Text('Settings'),
+                  onTap: _showSettings,
                 ),
-                const SizedBox(height: 5),
-                Text(
-                  _studentProfile?['name'] ?? 'Student Account',
-                  style: const TextStyle(color: Colors.white70),
-                  overflow: TextOverflow.ellipsis,
+                ListTile(
+                  leading: const Icon(Icons.help_outline, color: Colors.grey),
+                  title: const Text('Help & Support'),
+                  onTap: _showHelp,
                 ),
               ],
             ),
           ),
-          ..._navItems.asMap().entries.map((entry) {
-            final index = entry.key;
-            final item = entry.value;
-            return ListTile(
-              leading: Icon(item['icon']),
-              title: Text(item['label']),
-              selected: _selectedIndex == index,
-              onTap: () {
-                setState(() => _selectedIndex = index);
-                Navigator.pop(context);
-              },
-            );
-          }),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.settings, color: Colors.grey),
-            title: const Text('Settings'),
-            onTap: _showSettings,
-          ),
-          ListTile(
-            leading: const Icon(Icons.help, color: Colors.grey),
-            title: const Text('Help & Support'),
-            onTap: _showHelp,
-          ),
-          ListTile(
-            leading: const Icon(Icons.person, color: Colors.grey),
-            title: const Text('My Profile'),
-            onTap: () {
-              Navigator.pop(context);
-              _showProfileDialog();
-            },
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: Colors.grey.shade200)),
+            ),
+            child: SafeArea(
+              child: ListTile(
+                leading: const CircleAvatar(
+                  radius: 16,
+                  backgroundColor: Colors.grey,
+                  child: Icon(Icons.person, size: 18, color: Colors.white),
+                ),
+                title: Text(
+                  user?.email ?? 'Student',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showProfileDialog();
+                },
+              ),
+            ),
           ),
         ],
       ),
@@ -192,6 +330,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
   // ============ DASHBOARD HOME ============
   Widget _buildDashboardHome() {
     return Scaffold(
+      backgroundColor: Colors.grey.shade50,
       body: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
@@ -199,25 +338,61 @@ class _StudentDashboardState extends State<StudentDashboard> {
             padding: const EdgeInsets.all(20.0),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Colors.blue.shade50, Colors.white],
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.blue.shade100),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Welcome back,',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _studentProfile?['name']?.split(' ').first ?? 'Student',
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Ready to take your next test?',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
                 const Text(
-                  'Welcome to College Portal!',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  'Your Progress',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(height: 10),
-                Text(
-                  'Take tests and apply to your dream colleges',
-                  style: TextStyle(color: Colors.grey.shade600),
-                ),
-                const SizedBox(height: 30),
+                const SizedBox(height: 16),
                 _buildStatsSection(),
-                const SizedBox(height: 30),
+                const SizedBox(height: 24),
                 const Text(
                   'Quick Actions',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(height: 15),
+                const SizedBox(height: 16),
                 _buildQuickActions(),
-                const SizedBox(height: 30),
+                const SizedBox(height: 24),
               ]),
             ),
           ),
@@ -255,13 +430,13 @@ class _StudentDashboardState extends State<StudentDashboard> {
         return GridView.count(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          crossAxisSpacing: 15,
-          mainAxisSpacing: 15,
-          childAspectRatio: 1.5,
+          crossAxisCount: 4,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+          childAspectRatio: 1,
           children: [
             _buildStatCard(
-              'Tests Taken',
+              'Tests',
               testCount.toString(),
               Colors.blue,
               Icons.assignment,
@@ -273,7 +448,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
               Icons.leaderboard,
             ),
             _buildStatCard(
-              'Applications',
+              'Apps',
               applicationCount.toString(),
               Colors.orange,
               Icons.school,
@@ -296,28 +471,39 @@ class _StudentDashboardState extends State<StudentDashboard> {
     Color color,
     IconData icon,
   ) {
-    return Card(
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(12.0),
+        padding: const EdgeInsets.all(8.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 28, color: color),
-            const SizedBox(height: 8),
+            Icon(icon, size: 20, color: color),
+            const SizedBox(height: 4),
             Text(
               value,
               style: TextStyle(
-                fontSize: 20,
+                fontSize: 16,
                 fontWeight: FontWeight.bold,
                 color: color,
               ),
             ),
             Text(
               title,
-              style: const TextStyle(fontSize: 11),
+              style: const TextStyle(fontSize: 9),
               textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
@@ -326,35 +512,48 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   Widget _buildQuickActions() {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children: [
-        _buildActionButton(
-          icon: Icons.quiz,
-          label: 'Take Test',
-          onTap: () => setState(() => _selectedIndex = 2),
-          color: Colors.blue,
-        ),
-        _buildActionButton(
-          icon: Icons.school,
-          label: 'Browse Colleges',
-          onTap: () => setState(() => _selectedIndex = 1),
-          color: Colors.green,
-        ),
-        _buildActionButton(
-          icon: Icons.history,
-          label: 'View Results',
-          onTap: () => setState(() => _selectedIndex = 3),
-          color: Colors.orange,
-        ),
-        _buildActionButton(
-          icon: Icons.feedback,
-          label: 'Give Feedback',
-          onTap: () => setState(() => _selectedIndex = 4),
-          color: Colors.purple,
-        ),
-      ],
+    final actions = [
+      {
+        'icon': Icons.quiz,
+        'label': 'Take Test',
+        'color': Colors.blue,
+        'index': 2,
+      },
+      {
+        'icon': Icons.school,
+        'label': 'Colleges',
+        'color': Colors.green,
+        'index': 1,
+      },
+      {
+        'icon': Icons.history,
+        'label': 'Results',
+        'color': Colors.orange,
+        'index': 3,
+      },
+      {
+        'icon': Icons.feedback,
+        'label': 'Feedback',
+        'color': Colors.purple,
+        'index': 4,
+      },
+    ];
+
+    return GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: 4,
+      crossAxisSpacing: 8,
+      mainAxisSpacing: 8,
+      childAspectRatio: 0.9,
+      children: actions.map((action) {
+        return _buildActionButton(
+          icon: action['icon'] as IconData,
+          label: action['label'] as String,
+          onTap: () => setState(() => _selectedIndex = action['index'] as int),
+          color: action['color'] as Color,
+        );
+      }).toList(),
     );
   }
 
@@ -367,28 +566,37 @@ class _StudentDashboardState extends State<StudentDashboard> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 110,
-        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.3)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 28, color: color),
-            const SizedBox(height: 6),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: color,
-              ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.1),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
             ),
           ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 22, color: color),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -397,345 +605,677 @@ class _StudentDashboardState extends State<StudentDashboard> {
   // ============ COLLEGE SELECTION - COMPLETELY FIXED ============
   Widget _buildCollegeSelection() {
     return Scaffold(
-      body: FutureBuilder(
-        future: _loadColleges(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasData) {
-            _allColleges = snapshot.data ?? [];
-            // Initialize filtered colleges if empty
-            if (_filteredColleges.isEmpty && _searchQuery.isEmpty) {
-              _filteredColleges = List.from(_allColleges);
-            }
-          }
-
-          return CustomScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: [
-              SliverPadding(
-                padding: const EdgeInsets.all(20.0),
-                sliver: SliverList(
-                  delegate: SliverChildListDelegate([
-                    // Search Field
-                    TextField(
-                      onChanged: _filterColleges,
-                      decoration: InputDecoration(
-                        hintText:
-                            'Search colleges by name, location, or courses...',
-                        prefixIcon: const Icon(Icons.search),
-                        suffixIcon: _searchQuery.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.clear),
-                                onPressed: _clearSearch,
-                              )
-                            : null,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        filled: true,
-                        fillColor: Colors.grey.shade50,
+      backgroundColor: Colors.grey.shade50,
+      body: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.all(16.0),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                // Header with refresh button
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Colleges',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    IconButton(
+                      icon: const Icon(Icons.refresh),
+                      onPressed: _loadColleges,
+                      tooltip: 'Refresh',
+                      padding: const EdgeInsets.all(8),
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
 
-                    // Results count
+                // Search Field - FIXED with proper constraints
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.1),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: TextField(
+                    onChanged: _filterColleges,
+                    controller: TextEditingController(text: _searchQuery),
+                    decoration: InputDecoration(
+                      hintText: 'Search colleges...',
+                      hintStyle: TextStyle(
+                        color: Colors.grey.shade400,
+                        fontSize: 14,
+                      ),
+                      prefixIcon: const Icon(Icons.search, size: 20),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, size: 18),
+                              onPressed: _clearSearch,
+                              padding: const EdgeInsets.all(8),
+                              constraints: const BoxConstraints(),
+                            )
+                          : null,
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Results count and filters
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
                     Text(
                       _searchQuery.isEmpty
                           ? 'All Colleges (${_allColleges.length})'
                           : 'Search Results (${_filteredColleges.length})',
-                      style: const TextStyle(
-                        fontSize: 16,
+                      style: TextStyle(
+                        fontSize: 14,
                         fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade700,
                       ),
                     ),
-                    const SizedBox(height: 10),
-
-                    // Colleges Grid
-                    _buildCollegeGrid(_filteredColleges),
-                  ]),
+                    if (_selectedColleges.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.blue.shade200),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.check_circle,
+                              size: 14,
+                              color: Colors.blue,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${_selectedColleges.length} selected',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.blue,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
+                const SizedBox(height: 16),
 
-  Future<List<Map<String, dynamic>>> _loadColleges() async {
-    try {
-      final response = await supabase
-          .from('colleges')
-          .select('*')
-          .eq('is_active', true)
-          .order('name', ascending: true);
-      return List<Map<String, dynamic>>.from(response);
-    } catch (e) {
-      print('Error loading colleges: $e');
-      return [];
-    }
-  }
-
-  void _filterColleges(String query) {
-    setState(() {
-      _searchQuery = query;
-      if (query.isEmpty) {
-        _filteredColleges = List.from(_allColleges);
-      } else {
-        _filteredColleges = _allColleges.where((college) {
-          final name = college['name']?.toString().toLowerCase() ?? '';
-          final location = college['location']?.toString().toLowerCase() ?? '';
-          final courses = college['courses']?.toString().toLowerCase() ?? '';
-          return name.contains(query.toLowerCase()) ||
-              location.contains(query.toLowerCase()) ||
-              courses.contains(query.toLowerCase());
-        }).toList();
-      }
-    });
-  }
-
-  void _clearSearch() {
-    setState(() {
-      _searchQuery = '';
-      _filteredColleges = List.from(_allColleges);
-    });
-  }
-
-  Widget _buildCollegeGrid(List<Map<String, dynamic>> colleges) {
-    if (colleges.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 40),
-          child: Column(
-            children: [
-              Icon(
-                _searchQuery.isEmpty ? Icons.school : Icons.search_off,
-                size: 60,
-                color: Colors.grey,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                _searchQuery.isEmpty
-                    ? 'No colleges available'
-                    : 'No colleges found for "$_searchQuery"',
-                style: const TextStyle(color: Colors.grey, fontSize: 16),
-              ),
-              if (_searchQuery.isNotEmpty) ...[
-                const SizedBox(height: 20),
-                ElevatedButton.icon(
-                  onPressed: _clearSearch,
-                  icon: const Icon(Icons.clear),
-                  label: const Text('Clear Search'),
-                ),
-              ],
-            ],
-          ),
-        ),
-      );
-    }
-
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 15,
-        mainAxisSpacing: 15,
-        childAspectRatio: 0.9,
-      ),
-      itemCount: colleges.length,
-      itemBuilder: (context, index) {
-        final college = colleges[index];
-        return _buildCollegeCard(college);
-      },
-    );
-  }
-
-  Widget _buildCollegeCard(Map<String, dynamic> college) {
-    return Card(
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: InkWell(
-        onTap: () => _showCollegeDetails(college),
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // College Icon
-              CircleAvatar(
-                backgroundColor: Colors.blue.shade100,
-                child: const Icon(Icons.school, color: Colors.blue),
-              ),
-              const SizedBox(height: 10),
-
-              // College Name
-              Text(
-                college['name'] ?? 'Unknown',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 4),
-
-              // Location
-              Text(
-                college['location'] ?? '',
-                style: const TextStyle(fontSize: 11, color: Colors.grey),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 8),
-
-              // Course Chips
-              if (college['courses'] != null) ...[
-                Wrap(
-                  spacing: 4,
-                  runSpacing: 4,
-                  children: (college['courses'].toString().split(',').take(2))
-                      .map(
-                        (course) => Chip(
-                          label: Text(
-                            course.trim(),
-                            style: const TextStyle(fontSize: 9),
-                          ),
-                          backgroundColor: Colors.blue.shade50,
-                          side: BorderSide.none,
-                          materialTapTargetSize:
-                              MaterialTapTargetSize.shrinkWrap,
+                // Colleges Grid
+                _isLoadingColleges
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 40),
+                          child: CircularProgressIndicator(),
                         ),
                       )
-                      .toList(),
-                ),
-              ],
-
-              const Spacer(),
-
-              // View Details Button
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () => _showCollegeDetails(college),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 30),
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    side: BorderSide(color: Colors.blue.shade200),
-                  ),
-                  child: const Text(
-                    'View Details',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showCollegeDetails(Map<String, dynamic> college) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.school, color: Colors.blue),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                college['name'] ?? 'College Details',
-                style: const TextStyle(fontSize: 18),
-              ),
+                    : _filteredColleges.isEmpty
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(vertical: 40),
+                        child: Center(
+                          child: Column(
+                            children: [
+                              Icon(
+                                _searchQuery.isEmpty
+                                    ? Icons.school_outlined
+                                    : Icons.search_off,
+                                size: 48,
+                                color: Colors.grey.shade400,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                _searchQuery.isEmpty
+                                    ? 'No colleges available'
+                                    : 'No colleges found for "$_searchQuery"',
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              if (_searchQuery.isNotEmpty) ...[
+                                const SizedBox(height: 16),
+                                ElevatedButton(
+                                  onPressed: _clearSearch,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.blue,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 20,
+                                      vertical: 10,
+                                    ),
+                                  ),
+                                  child: const Text('Clear Search'),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      )
+                    : _buildCollegeGrid(_filteredColleges),
+              ]),
             ),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildDetailRow(
-                Icons.location_on,
-                'Location',
-                college['location'] ?? 'N/A',
-              ),
-              const Divider(),
-              _buildDetailRow(Icons.book, 'Courses', ''),
-              ...(college['courses']?.toString().split(',') ??
-                      ['No courses listed'])
-                  .map(
-                    (course) => Padding(
-                      padding: const EdgeInsets.only(left: 32, top: 4),
-                      child: Text('• ${course.trim()}'),
-                    ),
-                  )
-                  .toList(),
-              const Divider(),
-              _buildDetailRow(
-                Icons.description,
-                'Description',
-                college['description'] ?? 'No description available',
-              ),
-              if (college['email'] != null) ...[
-                const Divider(),
-                _buildDetailRow(Icons.email, 'Email', college['email']),
-              ],
-              if (college['website'] != null) ...[
-                const Divider(),
-                _buildDetailRow(Icons.link, 'Website', college['website']),
-              ],
-              if (college['phone'] != null) ...[
-                const Divider(),
-                _buildDetailRow(Icons.phone, 'Phone', college['phone']),
-              ],
-            ],
-          ),
-        ),
-        actions: [
-          TextButton.icon(
-            onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.close),
-            label: const Text('Close'),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildDetailRow(IconData icon, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 20, color: Colors.blue.shade700),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+  Widget _buildCollegeGrid(List<Map<String, dynamic>> colleges) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final crossAxisCount = screenWidth > 600 ? 3 : 2;
+    final childAspectRatio = screenWidth > 600 ? 1.2 : 0.95;
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossAxisCount,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: childAspectRatio,
+      ),
+      itemCount: colleges.length,
+      itemBuilder: (context, index) {
+        final college = colleges[index];
+        final isSelected = _selectedColleges.contains(college['id']);
+        return _buildCollegeCard(college, isSelected);
+      },
+    );
+  }
+
+  Widget _buildCollegeCard(Map<String, dynamic> college, bool isSelected) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+        border: Border.all(
+          color: isSelected ? Colors.blue : Colors.transparent,
+          width: 2,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: () => _showCollegeDetails(college),
+          borderRadius: BorderRadius.circular(16),
+          child: Stack(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // College Icon with selection indicator
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? Colors.blue.shade50
+                                : Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            Icons.school,
+                            size: 20,
+                            color: isSelected
+                                ? Colors.blue
+                                : Colors.grey.shade600,
+                          ),
+                        ),
+                        const Spacer(),
+                        if (isSelected)
+                          Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: BoxDecoration(
+                              color: Colors.blue,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.check,
+                              size: 12,
+                              color: Colors.white,
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // College Name
+                    Text(
+                      college['name'] ?? 'Unknown',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+
+                    // Location
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.location_on,
+                          size: 10,
+                          color: Colors.grey.shade500,
+                        ),
+                        const SizedBox(width: 2),
+                        Expanded(
+                          child: Text(
+                            college['location'] ?? '',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Course Chips
+                    if (college['courses'] != null) ...[
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children:
+                            (college['courses'].toString().split(',').take(2))
+                                .map(
+                                  (course) => Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.shade50,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      course.trim(),
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        color: Colors.blue.shade700,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                      ),
+                    ],
+
+                    const Spacer(),
+
+                    // Action Buttons
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () =>
+                                _toggleCollegeSelection(college['id']),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              side: BorderSide(
+                                color: isSelected
+                                    ? Colors.blue
+                                    : Colors.grey.shade300,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              minimumSize: const Size(double.infinity, 32),
+                            ),
+                            child: Text(
+                              isSelected ? 'Selected' : 'Select',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isSelected
+                                    ? Colors.blue
+                                    : Colors.grey.shade700,
+                                fontWeight: isSelected
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: IconButton(
+                            icon: const Icon(Icons.info_outline, size: 16),
+                            onPressed: () => _showCollegeDetails(college),
+                            padding: const EdgeInsets.all(8),
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
+                            tooltip: 'View Details',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // FIXED: Toggle college selection
+  void _toggleCollegeSelection(String collegeId) {
+    setState(() {
+      if (_selectedColleges.contains(collegeId)) {
+        _selectedColleges.remove(collegeId);
+      } else {
+        _selectedColleges.add(collegeId);
+      }
+    });
+  }
+
+  // FIXED: Show college details with proper constraints
+  void _showCollegeDetails(Map<String, dynamic> college) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.7,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            // Handle
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
+
+            // Header
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.school, color: Colors.blue),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          college['name'] ?? 'College Details',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          college['location'] ?? '',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                    padding: const EdgeInsets.all(8),
+                    constraints: const BoxConstraints(),
+                  ),
+                ],
+              ),
+            ),
+
+            const Divider(height: 24),
+
+            // Content
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Courses
+                    const Text(
+                      'Available Courses',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children:
+                          (college['courses']?.toString().split(',') ??
+                                  ['No courses listed'])
+                              .map(
+                                (course) => Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.shade50,
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: Colors.blue.shade200,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    course.trim(),
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.blue.shade700,
+                                    ),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // Description
+                    const Text(
+                      'Description',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      college['description'] ?? 'No description available',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade700,
+                        height: 1.5,
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // Contact Information
+                    const Text(
+                      'Contact Information',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (college['email'] != null)
+                      _buildContactTile(Icons.email, 'Email', college['email']),
+                    if (college['website'] != null)
+                      _buildContactTile(
+                        Icons.link,
+                        'Website',
+                        college['website'],
+                      ),
+                    if (college['phone'] != null)
+                      _buildContactTile(Icons.phone, 'Phone', college['phone']),
+                  ],
+                ),
+              ),
+            ),
+
+            // Action Button
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border(top: BorderSide(color: Colors.grey.shade200)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _toggleCollegeSelection(college['id']);
+                      },
+                      icon: Icon(
+                        _selectedColleges.contains(college['id'])
+                            ? Icons.check_circle
+                            : Icons.add_circle_outline,
+                        size: 18,
+                      ),
+                      label: Text(
+                        _selectedColleges.contains(college['id'])
+                            ? 'Remove from Selection'
+                            : 'Add to Selection',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            _selectedColleges.contains(college['id'])
+                            ? Colors.red.shade50
+                            : Colors.blue.shade50,
+                        foregroundColor:
+                            _selectedColleges.contains(college['id'])
+                            ? Colors.red
+                            : Colors.blue,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(
+                            color: _selectedColleges.contains(college['id'])
+                                ? Colors.red.shade200
+                                : Colors.blue.shade200,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContactTile(IconData icon, String label, String value) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: Colors.grey.shade600),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+              ),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -745,6 +1285,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
   // ============ TEST SELECTION ============
   Widget _buildTestSelection() {
     return Scaffold(
+      backgroundColor: Colors.grey.shade50,
       body: FutureBuilder(
         future: _loadTests(),
         builder: (context, snapshot) {
@@ -768,13 +1309,35 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
                     const Text(
-                      'Select a test to begin',
-                      style: TextStyle(color: Colors.grey),
+                      'Select a test to assess your knowledge',
+                      style: TextStyle(color: Colors.grey, fontSize: 14),
                     ),
                     const SizedBox(height: 20),
                     ...tests.map((test) => _buildTestCard(test)).toList(),
+                    if (tests.isEmpty) ...[
+                      const SizedBox(height: 40),
+                      const Center(
+                        child: Column(
+                          children: [
+                            Icon(
+                              Icons.quiz_outlined,
+                              size: 48,
+                              color: Colors.grey,
+                            ),
+                            SizedBox(height: 16),
+                            Text(
+                              'No tests available',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ]),
                 ),
               ),
@@ -800,34 +1363,113 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   Widget _buildTestCard(Map<String, dynamic> test) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 15),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(16),
-        leading: CircleAvatar(
-          backgroundColor: Colors.blue.shade100,
-          child: const Icon(Icons.quiz, color: Colors.blue),
-        ),
-        title: Text(test['name'] ?? 'Unnamed Test'),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Duration: ${test['duration']} minutes'),
-            Text('Questions: ${test['total_questions']}'),
-          ],
-        ),
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => TestScreen(
-                testId: test['id'].toString(),
-                testData: test,
-                selectedColleges: const [], // Empty list for direct test
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => TestScreen(
+                  testId: test['id'].toString(),
+                  testData: test,
+                  selectedColleges: _selectedColleges
+                      .toList(), // Pass selected colleges
+                ),
               ),
+            );
+          },
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.quiz, color: Colors.blue),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        test['name'] ?? 'Unnamed Test',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              '${test['duration']} min',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              '${test['total_questions']} Qs',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(
+                  Icons.arrow_forward_ios,
+                  size: 16,
+                  color: Colors.grey,
+                ),
+              ],
             ),
-          );
-        },
+          ),
+        ),
       ),
     );
   }
@@ -835,6 +1477,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
   // ============ TEST HISTORY ============
   Widget _buildTestHistory() {
     return Scaffold(
+      backgroundColor: Colors.grey.shade50,
       body: FutureBuilder(
         future: _loadTestHistory(),
         builder: (context, snapshot) {
@@ -858,20 +1501,41 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
                     const Text(
-                      'View your test results',
-                      style: TextStyle(color: Colors.grey),
+                      'Your previous test attempts',
+                      style: TextStyle(color: Colors.grey, fontSize: 14),
                     ),
                     const SizedBox(height: 20),
                     if (history.isEmpty)
                       const Center(
-                        child: Column(
-                          children: [
-                            Icon(Icons.history, size: 60, color: Colors.grey),
-                            SizedBox(height: 16),
-                            Text('No test history yet'),
-                          ],
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 40),
+                          child: Column(
+                            children: [
+                              Icon(
+                                Icons.history_outlined,
+                                size: 48,
+                                color: Colors.grey,
+                              ),
+                              SizedBox(height: 16),
+                              Text(
+                                'No test history yet',
+                                style: TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                'Take your first test to see results here',
+                                style: TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       )
                     else
@@ -893,7 +1557,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
       final user = supabase.auth.currentUser;
       if (user == null) return [];
 
-      // Check if table exists first
       try {
         final response = await supabase
             .from('student_tests')
@@ -941,43 +1604,74 @@ class _StudentDashboardState extends State<StudentDashboard> {
     final testData = test['tests'] ?? {};
     final percentage = test['percentage'] ?? 0;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 15),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
+        padding: const EdgeInsets.all(16.0),
+        child: Row(
           children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  backgroundColor: Colors.blue.shade100,
-                  child: const Icon(Icons.assignment, color: Colors.blue),
-                ),
-                const SizedBox(width: 15),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        testData['name'] ?? 'Unknown Test',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      Text(
-                        'Score: ${test['score']}/${test['total_questions']}',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ],
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: _getScoreColor(percentage).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                percentage >= 70 ? Icons.emoji_events : Icons.assignment,
+                color: _getScoreColor(percentage),
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    testData['name'] ?? 'Unknown Test',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-                Chip(
-                  label: Text('$percentage%'),
-                  backgroundColor: _getScoreColor(percentage).withOpacity(0.1),
-                  labelStyle: TextStyle(
-                    color: _getScoreColor(percentage),
-                    fontWeight: FontWeight.bold,
+                  const SizedBox(height: 4),
+                  Text(
+                    'Score: ${test['score']}/${test['total_questions']}',
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
                   ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: _getScoreColor(percentage).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: _getScoreColor(percentage).withOpacity(0.3),
                 ),
-              ],
+              ),
+              child: Text(
+                '$percentage%',
+                style: TextStyle(
+                  color: _getScoreColor(percentage),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
             ),
           ],
         ),
@@ -986,14 +1680,16 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   Color _getScoreColor(int percentage) {
-    if (percentage >= 70) return Colors.green;
-    if (percentage >= 50) return Colors.orange;
+    if (percentage >= 80) return Colors.green;
+    if (percentage >= 60) return Colors.blue;
+    if (percentage >= 40) return Colors.orange;
     return Colors.red;
   }
 
   // ============ FEEDBACK SECTION - FIXED ============
   Widget _buildFeedbackSection() {
     return Scaffold(
+      backgroundColor: Colors.grey.shade50,
       body: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
@@ -1002,15 +1698,15 @@ class _StudentDashboardState extends State<StudentDashboard> {
             sliver: SliverList(
               delegate: SliverChildListDelegate([
                 const Text(
-                  'Submit Feedback',
+                  'Feedback',
                   style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
                 const Text(
-                  'Help us improve the system',
-                  style: TextStyle(color: Colors.grey),
+                  'Help us improve your experience',
+                  style: TextStyle(color: Colors.grey, fontSize: 14),
                 ),
-                const SizedBox(height: 30),
+                const SizedBox(height: 24),
                 _buildFeedbackForm(),
               ]),
             ),
@@ -1021,53 +1717,124 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   Widget _buildFeedbackForm() {
-    return Column(
-      children: [
-        TextFormField(
-          controller: _titleController,
-          decoration: const InputDecoration(
-            labelText: 'Title',
-            border: OutlineInputBorder(),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
           ),
-        ),
-        const SizedBox(height: 20),
-        const Text('Rating'),
-        const SizedBox(height: 10),
-        Row(
-          children: List.generate(5, (index) {
-            return IconButton(
-              onPressed: () {
-                setState(() {
-                  _feedbackRating = index + 1;
-                });
-              },
-              icon: Icon(
-                index < _feedbackRating ? Icons.star : Icons.star_border,
-                color: Colors.amber,
+        ],
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Title Field
+          const Text(
+            'Title',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade200),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: TextFormField(
+              controller: _titleController,
+              decoration: InputDecoration(
+                hintText: 'Brief summary of your feedback',
+                hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
               ),
-            );
-          }),
-        ),
-        const SizedBox(height: 20),
-        TextFormField(
-          controller: _feedbackController,
-          maxLines: 5,
-          decoration: const InputDecoration(
-            labelText: 'Your Feedback',
-            border: OutlineInputBorder(),
-            alignLabelWithHint: true,
+            ),
           ),
-        ),
-        const SizedBox(height: 30),
-        SizedBox(
-          width: double.infinity,
-          height: 50,
-          child: ElevatedButton(
-            onPressed: _submitFeedback,
-            child: const Text('Submit Feedback'),
+          const SizedBox(height: 20),
+
+          // Rating
+          const Text(
+            'Rating',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
           ),
-        ),
-      ],
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(5, (index) {
+              return IconButton(
+                onPressed: () {
+                  setState(() {
+                    _feedbackRating = index + 1;
+                  });
+                },
+                icon: Icon(
+                  index < _feedbackRating ? Icons.star : Icons.star_border,
+                  color: Colors.amber,
+                  size: 32,
+                ),
+                padding: const EdgeInsets.all(4),
+                constraints: const BoxConstraints(),
+              );
+            }),
+          ),
+          const SizedBox(height: 20),
+
+          // Feedback Text
+          const Text(
+            'Your Feedback',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade200),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: TextFormField(
+              controller: _feedbackController,
+              maxLines: 4,
+              decoration: InputDecoration(
+                hintText: 'Share your experience, suggestions, or issues...',
+                hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Submit Button
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton(
+              onPressed: _submitFeedback,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text(
+                'Submit Feedback',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1075,9 +1842,15 @@ class _StudentDashboardState extends State<StudentDashboard> {
     if (_titleController.text.isEmpty ||
         _feedbackController.text.isEmpty ||
         _feedbackRating == 0) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Please fill all fields')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Please fill all fields'),
+          backgroundColor: Colors.orange.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          margin: const EdgeInsets.all(16),
+        ),
+      );
       return;
     }
 
@@ -1101,9 +1874,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Thank you for your feedback!'),
-          backgroundColor: Colors.green,
+        SnackBar(
+          content: const Text('Thank you for your feedback!'),
+          backgroundColor: Colors.green.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          margin: const EdgeInsets.all(16),
         ),
       );
     } catch (e) {
@@ -1111,67 +1887,131 @@ class _StudentDashboardState extends State<StudentDashboard> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error submitting feedback: $e'),
-          backgroundColor: Colors.red,
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          margin: const EdgeInsets.all(16),
         ),
       );
     }
   }
 
   void _showNotifications() {
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Notifications'),
-        content: const Text('No new notifications'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Notifications',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            const Text('No new notifications'),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   void _showSettings() {
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Settings'),
-        content: const Text('Settings coming soon'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Settings',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            const Text('Settings coming soon...'),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   void _showHelp() {
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Help & Support'),
-        content: const Text('Contact support@collegeportal.com'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Help & Support',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            const Text('Contact: support@collegeportal.com'),
+            const Text('Phone: +1 800-TEST-HELP'),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   void _showProfileDialog() {
     final user = supabase.auth.currentUser;
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('My Profile'),
-        content: Column(
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             CircleAvatar(
@@ -1183,20 +2023,29 @@ class _StudentDashboardState extends State<StudentDashboard> {
               ),
             ),
             const SizedBox(height: 16),
-            Text(user?.email ?? 'Student'),
+            Text(
+              user?.email ?? 'Student',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
             Text(
               _studentProfile?['name'] ?? 'Student Account',
-              style: const TextStyle(color: Colors.grey),
+              style: TextStyle(color: Colors.grey.shade600),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text('Close'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
       ),
     );
   }
@@ -1218,7 +2067,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
           builder: (context) => TestScreen(
             testId: response['id'].toString(),
             testData: response,
-            selectedColleges: const [], // Empty list for quick test
+            selectedColleges: _selectedColleges
+                .toList(), // Pass selected colleges
           ),
         ),
       );
@@ -1226,8 +2076,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('No tests available'),
-          backgroundColor: Colors.red,
+          content: const Text('No tests available'),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          margin: const EdgeInsets.all(16),
         ),
       );
     }
@@ -1239,14 +2092,22 @@ class _StudentDashboardState extends State<StudentDashboard> {
       builder: (context) => AlertDialog(
         title: const Text('Logout'),
         content: const Text('Are you sure you want to logout?'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Logout', style: TextStyle(color: Colors.red)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text('Logout'),
           ),
         ],
       ),
@@ -1317,8 +2178,6 @@ class _TestScreenState extends State<TestScreen> {
     } catch (e) {
       print('Error loading questions: $e');
       setState(() => _isLoading = false);
-
-      // Load mock questions for testing
       _loadMockQuestions();
     }
   }
@@ -1437,6 +2296,20 @@ class _TestScreenState extends State<TestScreen> {
           ),
           'submitted_at': DateTime.now().toIso8601String(),
         });
+
+        // Send results to selected colleges
+        if (widget.selectedColleges.isNotEmpty) {
+          for (final collegeId in widget.selectedColleges) {
+            await supabase.from('college_test_results').insert({
+              'college_id': collegeId,
+              'student_id': user.id,
+              'score': score,
+              'percentage': percentage,
+              'test_name': widget.testData?['name'] ?? 'Test',
+              'submitted_at': DateTime.now().toIso8601String(),
+            });
+          }
+        }
       }
     } catch (e) {
       print('Error saving test result: $e');
@@ -1475,10 +2348,11 @@ class _TestScreenState extends State<TestScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            const Text(
-              'Test submitted successfully!',
-              style: TextStyle(color: Colors.grey),
-            ),
+            if (widget.selectedColleges.isNotEmpty)
+              Text(
+                'Results sent to ${widget.selectedColleges.length} college(s)',
+                style: const TextStyle(color: Colors.grey),
+              ),
           ],
         ),
         actions: [
@@ -1514,7 +2388,7 @@ class _TestScreenState extends State<TestScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.quiz, size: 60, color: Colors.grey),
+              Icon(Icons.quiz_outlined, size: 60, color: Colors.grey),
               SizedBox(height: 16),
               Text(
                 'No questions available for this test',
@@ -1527,6 +2401,8 @@ class _TestScreenState extends State<TestScreen> {
     }
 
     final currentQuestion = _questions[_currentQuestionIndex];
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isSmallScreen = screenWidth < 600;
 
     // Parse options
     List<String> options = [];
@@ -1556,7 +2432,13 @@ class _TestScreenState extends State<TestScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.testData?['name'] ?? 'Test'),
+        title: Text(
+          widget.testData?['name'] ?? 'Test',
+          style: TextStyle(
+            fontSize: isSmallScreen ? 16 : 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         elevation: 0,
         actions: [
           Container(
@@ -1567,19 +2449,25 @@ class _TestScreenState extends State<TestScreen> {
                   ? Colors.red.shade50
                   : Colors.blue.shade50,
               borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: _timeRemaining < 300
+                    ? Colors.red.shade200
+                    : Colors.blue.shade200,
+              ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
                   Icons.timer,
-                  size: 18,
+                  size: 16,
                   color: _timeRemaining < 300 ? Colors.red : Colors.blue,
                 ),
                 const SizedBox(width: 6),
                 Text(
                   _formatTime(_timeRemaining),
                   style: TextStyle(
+                    fontSize: 13,
                     fontWeight: FontWeight.bold,
                     color: _timeRemaining < 300 ? Colors.red : Colors.blue,
                   ),
@@ -1591,13 +2479,13 @@ class _TestScreenState extends State<TestScreen> {
       ),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(20.0),
+          padding: EdgeInsets.all(isSmallScreen ? 16 : 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Progress bar
               Container(
-                padding: const EdgeInsets.symmetric(vertical: 4),
+                padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1606,18 +2494,28 @@ class _TestScreenState extends State<TestScreen> {
                       children: [
                         Text(
                           'Question ${_currentQuestionIndex + 1} of ${_questions.length}',
-                          style: const TextStyle(
-                            fontSize: 14,
+                          style: TextStyle(
+                            fontSize: 13,
                             fontWeight: FontWeight.w500,
-                            color: Colors.grey,
+                            color: Colors.grey.shade700,
                           ),
                         ),
-                        Text(
-                          'Answered: ${_answers.length}/${_questions.length}',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.grey,
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '${_answers.length}/${_questions.length}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.blue.shade700,
+                            ),
                           ),
                         ),
                       ],
@@ -1636,32 +2534,38 @@ class _TestScreenState extends State<TestScreen> {
                 ),
               ),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
 
               // Question
               Container(
-                padding: const EdgeInsets.all(16),
+                width: double.infinity,
+                padding: EdgeInsets.all(isSmallScreen ? 16 : 20),
                 decoration: BoxDecoration(
                   color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: Colors.blue.shade200),
                 ),
                 child: Text(
                   currentQuestion['question_text'] ?? 'No question text',
-                  style: const TextStyle(
-                    fontSize: 18,
+                  style: TextStyle(
+                    fontSize: isSmallScreen ? 16 : 18,
                     fontWeight: FontWeight.w600,
                     height: 1.5,
+                    color: Colors.blue.shade900,
                   ),
                 ),
               ),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
 
               // Options header
               const Text(
                 'Select your answer:',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey,
+                ),
               ),
 
               const SizedBox(height: 16),
@@ -1671,7 +2575,7 @@ class _TestScreenState extends State<TestScreen> {
                 child: ListView.separated(
                   itemCount: options.length,
                   separatorBuilder: (context, index) =>
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
                   itemBuilder: (context, index) {
                     final option = options[index];
                     final isSelected =
@@ -1683,9 +2587,9 @@ class _TestScreenState extends State<TestScreen> {
                         onTap: () => _selectAnswer(option),
                         borderRadius: BorderRadius.circular(12),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: isSmallScreen ? 14 : 16,
+                            vertical: isSmallScreen ? 12 : 14,
                           ),
                           decoration: BoxDecoration(
                             color: isSelected
@@ -1723,12 +2627,12 @@ class _TestScreenState extends State<TestScreen> {
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 16),
+                              const SizedBox(width: 14),
                               Expanded(
                                 child: Text(
                                   option,
                                   style: TextStyle(
-                                    fontSize: 16,
+                                    fontSize: isSmallScreen ? 14 : 15,
                                     fontWeight: isSelected
                                         ? FontWeight.w600
                                         : FontWeight.normal,
@@ -1742,7 +2646,7 @@ class _TestScreenState extends State<TestScreen> {
                                 const Icon(
                                   Icons.check_circle,
                                   color: Colors.blue,
-                                  size: 24,
+                                  size: 22,
                                 ),
                             ],
                           ),
@@ -1755,11 +2659,11 @@ class _TestScreenState extends State<TestScreen> {
 
               const SizedBox(height: 16),
 
-              // Navigation buttons - FIXED WITH CONSTRAINED SIZING
+              // Navigation buttons - FIXED LAYOUT
               Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.grey.withOpacity(0.1),
@@ -1768,33 +2672,36 @@ class _TestScreenState extends State<TestScreen> {
                     ),
                   ],
                 ),
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
                 child: Row(
                   children: [
                     // Previous button
                     Expanded(
                       child: SizedBox(
                         height: 48,
-                        child: ElevatedButton.icon(
+                        child: OutlinedButton(
                           onPressed: _currentQuestionIndex > 0
                               ? _previousQuestion
                               : null,
-                          icon: const Icon(Icons.arrow_back, size: 18),
-                          label: const Text('Previous'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey.shade100,
-                            foregroundColor: Colors.grey.shade800,
-                            elevation: 0,
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: Colors.grey.shade300),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              side: BorderSide(color: Colors.grey.shade300),
+                              borderRadius: BorderRadius.circular(10),
                             ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.arrow_back, size: 18),
+                              const SizedBox(width: 6),
+                              const Text('Previous'),
+                            ],
                           ),
                         ),
                       ),
                     ),
 
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 12),
 
                     // Next/Submit button
                     Expanded(
@@ -1813,7 +2720,7 @@ class _TestScreenState extends State<TestScreen> {
                             foregroundColor: Colors.white,
                             elevation: 0,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(10),
                             ),
                           ),
                           child: Row(
@@ -1822,18 +2729,18 @@ class _TestScreenState extends State<TestScreen> {
                               Text(
                                 _currentQuestionIndex < _questions.length - 1
                                     ? 'Next'
-                                    : 'Submit Test',
+                                    : 'Submit',
                                 style: const TextStyle(
-                                  fontSize: 16,
+                                  fontSize: 14,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              const SizedBox(width: 8),
+                              const SizedBox(width: 6),
                               Icon(
                                 _currentQuestionIndex < _questions.length - 1
                                     ? Icons.arrow_forward
                                     : Icons.send,
-                                size: 18,
+                                size: 16,
                               ),
                             ],
                           ),
