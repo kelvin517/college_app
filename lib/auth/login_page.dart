@@ -3,7 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../dashboards/student_dashboard.dart';
 import '../dashboards/college_dashboard.dart';
 import '../dashboards/admin_dashboard.dart';
-import 'register_page.dart'; // Added this import
+import 'register_page.dart';
 
 class LoginPage extends StatefulWidget {
   final String role;
@@ -48,17 +48,29 @@ class _LoginPageState extends State<LoginPage> {
           );
 
       if (res.user != null) {
-        // Get user's role from profiles table
+        // Get user's role from profiles table - FIXED: Use maybeSingle() instead of single()
         final profileResponse = await Supabase.instance.client
             .from('profiles')
             .select('role')
             .eq('id', res.user!.id)
-            .single();
+            .maybeSingle(); // This returns null if no record found, doesn't throw exception
 
-        // Check if profile exists
+        // Check if profile exists - THIS CODE IS NOW REACHABLE
         if (profileResponse == null) {
           await Supabase.instance.client.auth.signOut();
-          throw Exception('Profile not found. Please contact administrator.');
+
+          // Show user-friendly error message
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Account setup incomplete. Please contact administrator or register again.',
+              ),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+          return;
         }
 
         final String userRole = profileResponse['role'];
@@ -66,12 +78,22 @@ class _LoginPageState extends State<LoginPage> {
         // Verify role matches selected role
         if (userRole != widget.role) {
           await Supabase.instance.client.auth.signOut();
-          throw Exception(
-            'Access denied. You are registered as $userRole, not ${widget.role}',
+
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Access denied. You are registered as $userRole, not ${widget.role}',
+              ),
+              backgroundColor: Colors.red,
+            ),
           );
+          return;
         }
 
         // Navigate to appropriate dashboard
+        if (!mounted) return;
+
         switch (userRole) {
           case 'student':
             Navigator.pushAndRemoveUntil(
@@ -117,6 +139,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _showError(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -128,6 +151,7 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> resetPassword() async {
     if (emailController.text.isEmpty) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please enter your email first'),
@@ -142,6 +166,7 @@ class _LoginPageState extends State<LoginPage> {
         emailController.text.trim(),
       );
 
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Password reset email sent to ${emailController.text}'),
@@ -177,7 +202,7 @@ class _LoginPageState extends State<LoginPage> {
                 height: 80,
                 decoration: BoxDecoration(
                   color: Colors.deepPurple.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12), // Fixed
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
                   widget.role == 'student'
@@ -218,9 +243,7 @@ class _LoginPageState extends State<LoginPage> {
                   labelText: 'Email Address',
                   prefixIcon: Icon(Icons.email),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.all(
-                      Radius.circular(12),
-                    ), // Fixed
+                    borderRadius: BorderRadius.all(Radius.circular(12)),
                   ),
                 ),
                 keyboardType: TextInputType.emailAddress,
@@ -257,9 +280,7 @@ class _LoginPageState extends State<LoginPage> {
                     },
                   ),
                   border: const OutlineInputBorder(
-                    borderRadius: BorderRadius.all(
-                      Radius.circular(12),
-                    ), // Fixed
+                    borderRadius: BorderRadius.all(Radius.circular(12)),
                   ),
                 ),
                 validator: (value) {
