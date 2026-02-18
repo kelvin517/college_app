@@ -232,7 +232,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
     final screenWidth = mediaQuery.size.width;
     final screenHeight = mediaQuery.size.height;
     final isSmallScreen = screenWidth < 600;
-    final isTablet = screenWidth >= 600 && screenWidth < 1200;
 
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
