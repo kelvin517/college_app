@@ -22,6 +22,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
   bool _isLoadingColleges = false;
   final Set<String> _selectedColleges = {};
 
+  // FIXED: Add TextEditingController for search
+  final TextEditingController _searchController = TextEditingController();
+
   // Tests Fields
   List<Map<String, dynamic>> _availableTests = [];
   bool _isLoadingTests = false;
@@ -43,10 +46,19 @@ class _StudentDashboardState extends State<StudentDashboard> {
     _loadColleges();
     _loadTests();
     _loadTestHistory();
+
+    // FIXED: Add listener to search controller
+    _searchController.addListener(() {
+      if (_searchController.text != _searchQuery) {
+        _filterColleges(_searchController.text);
+      }
+    });
   }
 
   @override
   void dispose() {
+    // FIXED: Dispose all controllers
+    _searchController.dispose();
     _titleController.dispose();
     _feedbackController.dispose();
     super.dispose();
@@ -202,6 +214,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
   void _clearSearch() {
     setState(() {
       _searchQuery = '';
+      _searchController.clear(); // FIXED: Clear controller
       _filteredColleges = List.from(_allColleges);
     });
   }
@@ -991,7 +1004,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
-  // ============ COLLEGE SELECTION ============
+  // ============ COLLEGE SELECTION - FIXED ============
   Widget _buildCollegeSelection(double screenWidth) {
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
@@ -1006,7 +1019,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     delegate: SliverChildListDelegate([
                       _buildCollegeHeader(),
                       const SizedBox(height: 16),
-                      _buildSearchBar(),
+                      _buildSearchBar(), // FIXED: Using proper search bar
                       const SizedBox(height: 16),
                       _buildCollegeStats(),
                       const SizedBox(height: 16),
@@ -1040,6 +1053,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
+  // FIXED: Search bar with proper controller
   Widget _buildSearchBar() {
     return Container(
       decoration: BoxDecoration(
@@ -1054,8 +1068,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         ],
       ),
       child: TextField(
-        onChanged: _filterColleges,
-        controller: TextEditingController(text: _searchQuery),
+        controller: _searchController, // FIXED: Use persistent controller
         decoration: InputDecoration(
           hintText: 'Search colleges...',
           hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
@@ -2477,7 +2490,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   Future<void> _logout(BuildContext context) async {
-    final shouldLogout = await showDialog(
+    final shouldLogout = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Logout'),

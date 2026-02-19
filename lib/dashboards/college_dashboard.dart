@@ -22,12 +22,66 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
   List<Map<String, dynamic>> _attendance = [];
   List<Map<String, dynamic>> _applications = [];
   List<Map<String, dynamic>> _events = [];
+  List<Map<String, dynamic>> _applicants = [];
+
+  // Controllers for forms
+  final TextEditingController _studentNameController = TextEditingController();
+  final TextEditingController _studentEmailController = TextEditingController();
+  final TextEditingController _studentRollController = TextEditingController();
+  final TextEditingController _studentCourseController =
+      TextEditingController();
+  final TextEditingController _studentPhoneController = TextEditingController();
+
+  final TextEditingController _courseNameController = TextEditingController();
+  final TextEditingController _courseCodeController = TextEditingController();
+  final TextEditingController _courseDurationController =
+      TextEditingController();
+
+  final TextEditingController _eventTitleController = TextEditingController();
+  final TextEditingController _eventDescriptionController =
+      TextEditingController();
+  DateTime _selectedEventDate = DateTime.now();
 
   @override
   void initState() {
     super.initState();
     _loadCollegeProfile();
-    _dashboardData = _loadDashboardData();
+    _loadAllData();
+  }
+
+  @override
+  void dispose() {
+    // Dispose all controllers
+    _studentNameController.dispose();
+    _studentEmailController.dispose();
+    _studentRollController.dispose();
+    _studentCourseController.dispose();
+    _studentPhoneController.dispose();
+    _courseNameController.dispose();
+    _courseCodeController.dispose();
+    _courseDurationController.dispose();
+    _eventTitleController.dispose();
+    _eventDescriptionController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadAllData() async {
+    setState(() => _isLoading = true);
+    try {
+      await Future.wait([
+        _loadStudents(),
+        _loadCourses(),
+        _loadAttendance(),
+        _loadApplications(),
+        _loadEvents(),
+        _loadApplicants(),
+      ]);
+      _dashboardData = _loadDashboardData();
+    } catch (e) {
+      print('Error loading data: $e');
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _loadCollegeProfile() async {
@@ -50,28 +104,14 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
   }
 
   Future<Map<String, dynamic>> _loadDashboardData() async {
-    setState(() => _isLoading = true);
     try {
-      // Fetch all data in parallel
       final results = await Future.wait([
         _getTotalStudents(),
         _getTotalCourses(),
         _getTodayAttendance(),
         _getRecentApplications(),
         _getUpcomingEvents(),
-        _getStudentsList(),
-        _getCoursesList(),
-        _getAttendanceList(),
-        _getApplicationsList(),
       ]);
-
-      setState(() {
-        _students = results[5] as List<Map<String, dynamic>>;
-        _courses = results[6] as List<Map<String, dynamic>>;
-        _attendance = results[7] as List<Map<String, dynamic>>;
-        _applications = results[8] as List<Map<String, dynamic>>;
-        _isLoading = false;
-      });
 
       return {
         'totalStudents': results[0],
@@ -82,143 +122,257 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
       };
     } catch (e) {
       print('Error loading dashboard data: $e');
-      setState(() => _isLoading = false);
       return {
-        'totalStudents': 0,
-        'totalCourses': 0,
-        'todayAttendance': [],
-        'recentApplications': [],
-        'upcomingEvents': [],
+        'totalStudents': _students.length,
+        'totalCourses': _courses.length,
+        'todayAttendance': _attendance,
+        'recentApplications': _applications
+            .where((a) => a['status'] == 'pending')
+            .toList(),
+        'upcomingEvents': _events,
       };
     }
   }
 
   Future<int> _getTotalStudents() async {
-    try {
-      final response = await supabase
-          .from('students')
-          .select()
-          .count(CountOption.exact);
-      return response.count;
-    } catch (e) {
-      final response = await supabase.from('students').select('*');
-      return response.length;
-    }
+    return _students.length;
   }
 
   Future<int> _getTotalCourses() async {
-    try {
-      final response = await supabase
-          .from('courses')
-          .select()
-          .count(CountOption.exact);
-      return response.count;
-    } catch (e) {
-      final response = await supabase.from('courses').select('*');
-      return response.length;
-    }
+    return _courses.length;
   }
 
   Future<List<dynamic>> _getTodayAttendance() async {
+    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    return _attendance.where((a) => a['date'] == today).toList();
+  }
+
+  Future<List<dynamic>> _getRecentApplications() async {
+    return _applications
+        .where((a) => a['status'] == 'pending')
+        .take(5)
+        .toList();
+  }
+
+  Future<List<dynamic>> _getUpcomingEvents() async {
+    final today = DateTime.now();
+    return _events
+        .where((e) {
+          final eventDate = DateTime.parse(e['date']);
+          return eventDate.isAfter(today) || eventDate.isAtSameMomentAs(today);
+        })
+        .take(5)
+        .toList();
+  }
+
+  Future<void> _loadStudents() async {
+    try {
+      final response = await supabase
+          .from('students')
+          .select('*')
+          .order('created_at', ascending: false);
+
+      setState(() {
+        _students = List<Map<String, dynamic>>.from(response);
+      });
+    } catch (e) {
+      print('Error loading students: $e');
+      // Mock data for testing
+      setState(() {
+        _students = [
+          {
+            'id': '1',
+            'name': 'John Doe',
+            'email': 'john@example.com',
+            'roll_number': 'CS001',
+            'course': 'Computer Science',
+            'phone': '+1 234 567 890',
+            'created_at': DateTime.now().toIso8601String(),
+          },
+          {
+            'id': '2',
+            'name': 'Jane Smith',
+            'email': 'jane@example.com',
+            'roll_number': 'CS002',
+            'course': 'Computer Science',
+            'phone': '+1 234 567 891',
+            'created_at': DateTime.now().toIso8601String(),
+          },
+        ];
+      });
+    }
+  }
+
+  Future<void> _loadCourses() async {
+    try {
+      final response = await supabase
+          .from('courses')
+          .select('*')
+          .order('created_at', ascending: false);
+
+      setState(() {
+        _courses = List<Map<String, dynamic>>.from(response);
+      });
+    } catch (e) {
+      print('Error loading courses: $e');
+      // Mock data for testing
+      setState(() {
+        _courses = [
+          {
+            'id': '1',
+            'name': 'Computer Science',
+            'code': 'CS101',
+            'duration': '48',
+            'created_at': DateTime.now().toIso8601String(),
+          },
+          {
+            'id': '2',
+            'name': 'Business Administration',
+            'code': 'BA101',
+            'duration': '36',
+            'created_at': DateTime.now().toIso8601String(),
+          },
+        ];
+      });
+    }
+  }
+
+  Future<void> _loadAttendance() async {
     try {
       final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
       final response = await supabase
           .from('attendance')
           .select('*, student:students(name, roll_number)')
-          .eq('date', today)
-          .order('created_at', ascending: false)
-          .limit(10);
-      return response;
+          .order('created_at', ascending: false);
+
+      setState(() {
+        _attendance = List<Map<String, dynamic>>.from(response);
+      });
     } catch (e) {
-      return [];
+      print('Error loading attendance: $e');
+      // Mock data for testing
+      setState(() {
+        _attendance = [
+          {
+            'id': '1',
+            'student_id': '1',
+            'date': DateFormat('yyyy-MM-dd').format(DateTime.now()),
+            'status': 'present',
+            'student': {'name': 'John Doe', 'roll_number': 'CS001'},
+          },
+          {
+            'id': '2',
+            'student_id': '2',
+            'date': DateFormat('yyyy-MM-dd').format(DateTime.now()),
+            'status': 'absent',
+            'student': {'name': 'Jane Smith', 'roll_number': 'CS002'},
+          },
+        ];
+      });
     }
   }
 
-  Future<List<dynamic>> _getRecentApplications() async {
+  Future<void> _loadApplications() async {
     try {
       final response = await supabase
           .from('admission_applications')
-          .select('*, applicant:applicants(name, email)')
-          .eq('status', 'pending')
-          .order('created_at', ascending: false)
-          .limit(5);
-      return response;
+          .select('*, applicant:applicants(name, email, phone)')
+          .order('created_at', ascending: false);
+
+      setState(() {
+        _applications = List<Map<String, dynamic>>.from(response);
+      });
     } catch (e) {
-      return [];
+      print('Error loading applications: $e');
+      // Mock data for testing
+      setState(() {
+        _applications = [
+          {
+            'id': '1',
+            'applicant_id': '1',
+            'course_id': '1',
+            'status': 'pending',
+            'created_at': DateTime.now().toIso8601String(),
+            'applicant': {
+              'name': 'Alice Johnson',
+              'email': 'alice@example.com',
+              'phone': '+1 234 567 892',
+            },
+          },
+          {
+            'id': '2',
+            'applicant_id': '2',
+            'course_id': '2',
+            'status': 'pending',
+            'created_at': DateTime.now()
+                .subtract(const Duration(days: 1))
+                .toIso8601String(),
+            'applicant': {
+              'name': 'Bob Williams',
+              'email': 'bob@example.com',
+              'phone': '+1 234 567 893',
+            },
+          },
+        ];
+      });
     }
   }
 
-  Future<List<dynamic>> _getUpcomingEvents() async {
+  Future<void> _loadEvents() async {
     try {
       final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
       final response = await supabase
           .from('events')
           .select('*')
           .gte('date', today)
-          .order('date', ascending: true)
-          .limit(5);
-      return response;
+          .order('date', ascending: true);
+
+      setState(() {
+        _events = List<Map<String, dynamic>>.from(response);
+      });
     } catch (e) {
-      return [];
+      print('Error loading events: $e');
+      // Mock data for testing
+      setState(() {
+        _events = [
+          {
+            'id': '1',
+            'title': 'Orientation Day',
+            'description': 'Welcome new students',
+            'date': DateTime.now()
+                .add(const Duration(days: 7))
+                .toIso8601String(),
+          },
+          {
+            'id': '2',
+            'title': 'Career Fair',
+            'description': 'Meet potential employers',
+            'date': DateTime.now()
+                .add(const Duration(days: 14))
+                .toIso8601String(),
+          },
+        ];
+      });
     }
   }
 
-  Future<List<Map<String, dynamic>>> _getStudentsList() async {
+  Future<void> _loadApplicants() async {
     try {
       final response = await supabase
-          .from('students')
+          .from('applicants')
           .select('*')
-          .order('created_at', ascending: false)
-          .limit(20);
-      return List<Map<String, dynamic>>.from(response);
-    } catch (e) {
-      return [];
-    }
-  }
+          .order('created_at', ascending: false);
 
-  Future<List<Map<String, dynamic>>> _getCoursesList() async {
-    try {
-      final response = await supabase
-          .from('courses')
-          .select('*')
-          .order('created_at', ascending: false)
-          .limit(20);
-      return List<Map<String, dynamic>>.from(response);
+      setState(() {
+        _applicants = List<Map<String, dynamic>>.from(response);
+      });
     } catch (e) {
-      return [];
-    }
-  }
-
-  Future<List<Map<String, dynamic>>> _getAttendanceList() async {
-    try {
-      final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-      final response = await supabase
-          .from('attendance')
-          .select('*, student:students(name, roll_number)')
-          .eq('date', today)
-          .order('created_at', ascending: false)
-          .limit(20);
-      return List<Map<String, dynamic>>.from(response);
-    } catch (e) {
-      return [];
-    }
-  }
-
-  Future<List<Map<String, dynamic>>> _getApplicationsList() async {
-    try {
-      final response = await supabase
-          .from('admission_applications')
-          .select('*, applicant:applicants(name, email)')
-          .order('created_at', ascending: false)
-          .limit(20);
-      return List<Map<String, dynamic>>.from(response);
-    } catch (e) {
-      return [];
+      print('Error loading applicants: $e');
     }
   }
 
   Future<void> logout(BuildContext context) async {
-    final shouldLogout = await showDialog(
+    final shouldLogout = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Logout'),
@@ -274,16 +428,18 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
         actions: _buildAppBarActions(),
       ),
       drawer: _buildDrawer(),
-      body: IndexedStack(
-        index: _currentIndex,
-        children: [
-          _buildDashboardView(),
-          _buildStudentsView(),
-          _buildCoursesView(),
-          _buildAttendanceView(),
-          _buildProfileView(),
-        ],
-      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : IndexedStack(
+              index: _currentIndex,
+              children: [
+                _buildDashboardView(),
+                _buildStudentsView(),
+                _buildCoursesView(),
+                _buildAttendanceView(),
+                _buildProfileView(),
+              ],
+            ),
       floatingActionButton: _getFloatingActionButton(),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
@@ -294,9 +450,9 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
       case 0:
         return 'Dashboard';
       case 1:
-        return 'Students';
+        return 'Students (${_students.length})';
       case 2:
-        return 'Courses';
+        return 'Courses (${_courses.length})';
       case 3:
         return 'Attendance';
       case 4:
@@ -312,7 +468,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
         icon: Stack(
           children: [
             const Icon(Icons.notifications_outlined, color: Colors.white),
-            if (_applications.isNotEmpty)
+            if (_applications.where((a) => a['status'] == 'pending').isNotEmpty)
               Positioned(
                 right: 0,
                 top: 0,
@@ -335,7 +491,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
         icon: const Icon(Icons.refresh, color: Colors.white),
         onPressed: () {
           setState(() {
-            _dashboardData = _loadDashboardData();
+            _loadAllData();
           });
         },
         tooltip: 'Refresh',
@@ -370,12 +526,12 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                 ),
                 _buildDrawerMenuItem(
                   icon: Icons.people_outlined,
-                  label: 'Students',
+                  label: 'Students (${_students.length})',
                   index: 1,
                 ),
                 _buildDrawerMenuItem(
                   icon: Icons.book_outlined,
-                  label: 'Courses',
+                  label: 'Courses (${_courses.length})',
                   index: 2,
                 ),
                 _buildDrawerMenuItem(
@@ -435,7 +591,10 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                   backgroundColor: Colors.white,
                   radius: 30,
                   child: Text(
-                    _collegeProfile?['name']?.substring(0, 1).toUpperCase() ??
+                    _collegeProfile?['name']
+                            ?.toString()
+                            .substring(0, 1)
+                            .toUpperCase() ??
                         user?.email?.substring(0, 1).toUpperCase() ??
                         'C',
                     style: TextStyle(
@@ -448,7 +607,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
               ),
               const SizedBox(height: 12),
               Text(
-                _collegeProfile?['name'] ?? 'College Name',
+                _collegeProfile?['name']?.toString() ?? 'College Name',
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 18,
@@ -542,7 +701,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        _collegeProfile?['name'] ?? 'College Admin',
+                        _collegeProfile?['name']?.toString() ?? 'College Admin',
                         style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
@@ -602,11 +761,6 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
 
   // ============ DIALOGS ============
   void _showAddStudentDialog() {
-    final nameController = TextEditingController();
-    final emailController = TextEditingController();
-    final rollController = TextEditingController();
-    final courseController = TextEditingController();
-
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -616,7 +770,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
-                controller: nameController,
+                controller: _studentNameController,
                 decoration: const InputDecoration(
                   labelText: 'Full Name',
                   border: OutlineInputBorder(),
@@ -625,7 +779,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
               ),
               const SizedBox(height: 12),
               TextField(
-                controller: emailController,
+                controller: _studentEmailController,
                 decoration: const InputDecoration(
                   labelText: 'Email',
                   border: OutlineInputBorder(),
@@ -635,7 +789,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
               ),
               const SizedBox(height: 12),
               TextField(
-                controller: rollController,
+                controller: _studentRollController,
                 decoration: const InputDecoration(
                   labelText: 'Roll Number',
                   border: OutlineInputBorder(),
@@ -643,40 +797,82 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                 ),
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: courseController,
+              DropdownButtonFormField<String>(
                 decoration: const InputDecoration(
                   labelText: 'Course',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.book),
                 ),
+                value: _courses.isNotEmpty
+                    ? _courses[0]['id']?.toString()
+                    : null,
+                items: _courses.map<DropdownMenuItem<String>>((course) {
+                  return DropdownMenuItem<String>(
+                    value: course['id']?.toString(),
+                    child: Text(course['name']?.toString() ?? 'Unknown'),
+                  );
+                }).toList(),
+                onChanged: (String? value) {
+                  _studentCourseController.text = value ?? '';
+                },
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _studentPhoneController,
+                decoration: const InputDecoration(
+                  labelText: 'Phone Number',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.phone),
+                ),
+                keyboardType: TextInputType.phone,
               ),
             ],
           ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              _clearStudentControllers();
+              Navigator.pop(context);
+            },
             child: const Text('Cancel'),
           ),
-          ElevatedButton(
-            onPressed: () {
-              // Add student logic
-              Navigator.pop(context);
-              _showSnackBar('Student added successfully', Colors.green);
-            },
-            child: const Text('Add'),
-          ),
+          ElevatedButton(onPressed: _addStudent, child: const Text('Add')),
         ],
       ),
     );
   }
 
-  void _showAddCourseDialog() {
-    final nameController = TextEditingController();
-    final codeController = TextEditingController();
-    final durationController = TextEditingController();
+  void _clearStudentControllers() {
+    _studentNameController.clear();
+    _studentEmailController.clear();
+    _studentRollController.clear();
+    _studentCourseController.clear();
+    _studentPhoneController.clear();
+  }
 
+  void _addStudent() {
+    // Add student logic here
+    final newStudent = {
+      'id': DateTime.now().toString(),
+      'name': _studentNameController.text,
+      'email': _studentEmailController.text,
+      'roll_number': _studentRollController.text,
+      'course': _studentCourseController.text,
+      'phone': _studentPhoneController.text,
+      'created_at': DateTime.now().toIso8601String(),
+    };
+
+    setState(() {
+      _students.insert(0, newStudent);
+    });
+
+    _clearStudentControllers();
+    Navigator.pop(context);
+    _showSnackBar('Student added successfully', Colors.green);
+  }
+
+  void _showAddCourseDialog() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -686,7 +882,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
-                controller: nameController,
+                controller: _courseNameController,
                 decoration: const InputDecoration(
                   labelText: 'Course Name',
                   border: OutlineInputBorder(),
@@ -695,7 +891,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
               ),
               const SizedBox(height: 12),
               TextField(
-                controller: codeController,
+                controller: _courseCodeController,
                 decoration: const InputDecoration(
                   labelText: 'Course Code',
                   border: OutlineInputBorder(),
@@ -704,7 +900,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
               ),
               const SizedBox(height: 12),
               TextField(
-                controller: durationController,
+                controller: _courseDurationController,
                 decoration: const InputDecoration(
                   labelText: 'Duration (months)',
                   border: OutlineInputBorder(),
@@ -717,76 +913,211 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              _courseNameController.clear();
+              _courseCodeController.clear();
+              _courseDurationController.clear();
+              Navigator.pop(context);
+            },
             child: const Text('Cancel'),
           ),
-          ElevatedButton(
-            onPressed: () {
-              // Add course logic
-              Navigator.pop(context);
-              _showSnackBar('Course added successfully', Colors.green);
-            },
-            child: const Text('Add'),
-          ),
+          ElevatedButton(onPressed: _addCourse, child: const Text('Add')),
         ],
       ),
     );
+  }
+
+  void _addCourse() {
+    final newCourse = {
+      'id': DateTime.now().toString(),
+      'name': _courseNameController.text,
+      'code': _courseCodeController.text,
+      'duration': _courseDurationController.text,
+      'created_at': DateTime.now().toIso8601String(),
+    };
+
+    setState(() {
+      _courses.insert(0, newCourse);
+    });
+
+    _courseNameController.clear();
+    _courseCodeController.clear();
+    _courseDurationController.clear();
+    Navigator.pop(context);
+    _showSnackBar('Course added successfully', Colors.green);
   }
 
   void _showMarkAttendanceDialog() {
+    String? selectedCourse;
+    DateTime selectedDate = DateTime.now();
+    Map<String, String> attendanceStatus = {};
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Mark Attendance'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField(
-                decoration: const InputDecoration(
-                  labelText: 'Select Course',
-                  border: OutlineInputBorder(),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Mark Attendance'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  decoration: const InputDecoration(
+                    labelText: 'Select Course',
+                    border: OutlineInputBorder(),
+                  ),
+                  value: selectedCourse,
+                  items: _courses.map<DropdownMenuItem<String>>((course) {
+                    return DropdownMenuItem<String>(
+                      value: course['id']?.toString() ?? '',
+                      child: Text(course['name']?.toString() ?? 'Unknown'),
+                    );
+                  }).toList(),
+                  onChanged: (String? value) {
+                    setState(() {
+                      selectedCourse = value;
+                    });
+                  },
                 ),
-                items: _courses.map((course) {
-                  return DropdownMenuItem(
-                    value: course['id'],
-                    child: Text(course['name'] ?? 'Unknown'),
-                  );
-                }).toList(),
-                onChanged: (value) {},
-              ),
-              const SizedBox(height: 16),
-              const Text('Select Date:'),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  // Show date picker
-                },
-                icon: const Icon(Icons.calendar_today),
-                label: Text(DateFormat('yyyy-MM-dd').format(DateTime.now())),
-              ),
-            ],
+                const SizedBox(height: 16),
+                ListTile(
+                  leading: const Icon(Icons.calendar_today),
+                  title: Text(DateFormat('yyyy-MM-dd').format(selectedDate)),
+                  onTap: () async {
+                    final DateTime? date = await showDatePicker(
+                      context: context,
+                      initialDate: selectedDate,
+                      firstDate: DateTime.now().subtract(
+                        const Duration(days: 30),
+                      ),
+                      lastDate: DateTime.now(),
+                    );
+                    if (date != null) {
+                      setState(() {
+                        selectedDate = date;
+                      });
+                    }
+                  },
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Students',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 200,
+                  child: ListView.builder(
+                    itemCount: _students.length,
+                    itemBuilder: (context, index) {
+                      final student = _students[index];
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: Colors.blue.shade100,
+                          child: Text(
+                            student['name']
+                                    ?.toString()
+                                    .substring(0, 1)
+                                    .toUpperCase() ??
+                                '?',
+                          ),
+                        ),
+                        title: Text(student['name']?.toString() ?? 'Unknown'),
+                        subtitle: Text(
+                          student['roll_number']?.toString() ?? '',
+                        ),
+                        trailing: DropdownButton<String>(
+                          value:
+                              attendanceStatus[student['id']?.toString()] ??
+                              'present',
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'present',
+                              child: Text('Present'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'absent',
+                              child: Text('Absent'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'late',
+                              child: Text('Late'),
+                            ),
+                          ],
+                          onChanged: (String? value) {
+                            setState(() {
+                              attendanceStatus[student['id']?.toString() ??
+                                      ''] =
+                                  value!;
+                            });
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _saveAttendance(selectedDate, attendanceStatus);
+              },
+              child: const Text('Save Attendance'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _showSnackBar('Attendance marked successfully', Colors.green);
-            },
-            child: const Text('Mark Attendance'),
-          ),
-        ],
       ),
     );
   }
 
+  void _saveAttendance(DateTime date, Map<String, String> attendanceStatus) {
+    final dateStr = DateFormat('yyyy-MM-dd').format(date);
+
+    attendanceStatus.forEach((studentId, status) {
+      // Check if attendance already exists for this student on this date
+      final existingIndex = _attendance.indexWhere(
+        (a) => a['student_id'] == studentId && a['date'] == dateStr,
+      );
+
+      final newAttendance = {
+        'id': existingIndex >= 0
+            ? _attendance[existingIndex]['id']
+            : DateTime.now().toString() + studentId,
+        'student_id': studentId,
+        'date': dateStr,
+        'status': status,
+        'created_at': DateTime.now().toIso8601String(),
+        'student': _students.firstWhere(
+          (s) => s['id'] == studentId,
+          orElse: () => {'name': 'Unknown', 'roll_number': ''},
+        ),
+      };
+
+      setState(() {
+        if (existingIndex >= 0) {
+          _attendance[existingIndex] = newAttendance;
+        } else {
+          _attendance.add(newAttendance);
+        }
+      });
+    });
+
+    _showSnackBar('Attendance marked successfully', Colors.green);
+  }
+
   void _showNotifications() {
+    final pendingApplications = _applications
+        .where((a) => a['status'] == 'pending')
+        .toList();
+
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -804,7 +1135,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
             ),
             const SizedBox(height: 16),
             Expanded(
-              child: _applications.isEmpty
+              child: pendingApplications.isEmpty
                   ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -823,9 +1154,9 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                       ),
                     )
                   : ListView.builder(
-                      itemCount: _applications.length,
+                      itemCount: pendingApplications.length,
                       itemBuilder: (context, index) {
-                        final app = _applications[index];
+                        final app = pendingApplications[index];
                         final applicant = app['applicant'] ?? {};
                         return ListTile(
                           leading: CircleAvatar(
@@ -833,16 +1164,16 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                             child: const Icon(Icons.person, color: Colors.blue),
                           ),
                           title: Text(
-                            'New application from ${applicant['name'] ?? 'Unknown'}',
+                            'New application from ${applicant['name']?.toString() ?? 'Unknown'}',
                             style: const TextStyle(fontWeight: FontWeight.w500),
                           ),
                           subtitle: Text(
-                            'Applied for ${app['course_id'] ?? 'Unknown course'}',
+                            'Applied for ${_getCourseName(app['course_id']?.toString())}',
                           ),
                           trailing: Text(
                             DateFormat('MMM d').format(
                               DateTime.parse(
-                                app['created_at'] ??
+                                app['created_at']?.toString() ??
                                     DateTime.now().toIso8601String(),
                               ),
                             ),
@@ -850,7 +1181,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                           ),
                           onTap: () {
                             Navigator.pop(context);
-                            // Navigate to application details
+                            _showApplicationDetails(app);
                           },
                         );
                       },
@@ -860,6 +1191,14 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
         ),
       ),
     );
+  }
+
+  String _getCourseName(String? courseId) {
+    final course = _courses.firstWhere(
+      (c) => c['id'] == courseId,
+      orElse: () => {},
+    );
+    return course['name']?.toString() ?? 'Unknown course';
   }
 
   void _showSettings() {
@@ -881,17 +1220,22 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
             ListTile(
               leading: const Icon(Icons.notifications, color: Colors.blue),
               title: const Text('Notification Preferences'),
-              trailing: Switch(value: true, onChanged: (value) {}),
+              trailing: Switch(value: true, onChanged: (bool? value) {}),
             ),
             ListTile(
               leading: const Icon(Icons.color_lens, color: Colors.purple),
               title: const Text('Theme'),
               trailing: DropdownButton<String>(
                 value: 'Light',
-                items: ['Light', 'Dark', 'System'].map((theme) {
-                  return DropdownMenuItem(value: theme, child: Text(theme));
-                }).toList(),
-                onChanged: (value) {},
+                items: ['Light', 'Dark', 'System']
+                    .map<DropdownMenuItem<String>>((String theme) {
+                      return DropdownMenuItem<String>(
+                        value: theme,
+                        child: Text(theme),
+                      );
+                    })
+                    .toList(),
+                onChanged: (String? value) {},
               ),
             ),
             ListTile(
@@ -966,7 +1310,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
     return FutureBuilder<Map<String, dynamic>>(
       future: _dashboardData,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting || _isLoading) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
 
@@ -985,7 +1329,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                 ElevatedButton(
                   onPressed: () {
                     setState(() {
-                      _dashboardData = _loadDashboardData();
+                      _loadAllData();
                     });
                   },
                   style: ElevatedButton.styleFrom(
@@ -1003,9 +1347,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
 
         return RefreshIndicator(
           onRefresh: () async {
-            setState(() {
-              _dashboardData = _loadDashboardData();
-            });
+            await _loadAllData();
           },
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
@@ -1038,6 +1380,10 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
   }
 
   Widget _buildWelcomeCard() {
+    final pendingCount = _applications
+        .where((a) => a['status'] == 'pending')
+        .length;
+
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -1073,7 +1419,8 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      _collegeProfile?['name']?.split(' ').first ?? 'Admin',
+                      _collegeProfile?['name']?.toString().split(' ').first ??
+                          'Admin',
                       style: const TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.bold,
@@ -1115,6 +1462,35 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
               ],
             ),
           ),
+          if (pendingCount > 0) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade700,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.notifications_active,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'You have $pendingCount pending application(s)',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1152,28 +1528,39 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
         _buildStatsCard(
           icon: Icons.people,
           title: 'Students',
-          value: data['totalStudents'].toString(),
+          value: _students.length.toString(),
           color: Colors.blue,
           onTap: () => setState(() => _currentIndex = 1),
         ),
         _buildStatsCard(
           icon: Icons.book,
           title: 'Courses',
-          value: data['totalCourses'].toString(),
+          value: _courses.length.toString(),
           color: Colors.green,
           onTap: () => setState(() => _currentIndex = 2),
         ),
         _buildStatsCard(
           icon: Icons.check_circle,
           title: "Today's Attendance",
-          value: (data['todayAttendance'] as List).length.toString(),
+          value: _attendance
+              .where(
+                (a) =>
+                    a['date'] ==
+                        DateFormat('yyyy-MM-dd').format(DateTime.now()) &&
+                    a['status'] == 'present',
+              )
+              .length
+              .toString(),
           color: Colors.orange,
           onTap: () => setState(() => _currentIndex = 3),
         ),
         _buildStatsCard(
           icon: Icons.pending_actions,
           title: 'Pending Applications',
-          value: (data['recentApplications'] as List).length.toString(),
+          value: _applications
+              .where((a) => a['status'] == 'pending')
+              .length
+              .toString(),
           color: Colors.purple,
           onTap: _showApplications,
         ),
@@ -1239,32 +1626,28 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
   }
 
   Widget _buildQuickActions() {
-    final actions = [
+    final List<Map<String, dynamic>> actions = [
       {
         'icon': Icons.person_add,
         'label': 'Add Student',
-        'color': Colors.blue,
         'gradient': [Colors.blue.shade400, Colors.blue.shade700],
         'onTap': _showAddStudentDialog,
       },
       {
         'icon': Icons.check_circle,
         'label': 'Mark Attendance',
-        'color': Colors.green,
         'gradient': [Colors.green.shade400, Colors.green.shade700],
         'onTap': _showMarkAttendanceDialog,
       },
       {
         'icon': Icons.add_circle,
         'label': 'Create Course',
-        'color': Colors.purple,
         'gradient': [Colors.purple.shade400, Colors.purple.shade700],
         'onTap': _showAddCourseDialog,
       },
       {
         'icon': Icons.event,
         'label': 'Add Event',
-        'color': Colors.orange,
         'gradient': [Colors.orange.shade400, Colors.orange.shade700],
         'onTap': _showAddEventDialog,
       },
@@ -1343,9 +1726,18 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Recent Applications',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Recent Applications',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            TextButton(
+              onPressed: _showApplications,
+              child: const Text('View All'),
+            ),
+          ],
         ),
         const SizedBox(height: 12),
         if (applications.isEmpty)
@@ -1396,15 +1788,15 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                       style: TextStyle(color: Colors.blue.shade700),
                     ),
                   ),
-                  title: Text(applicant['name'] ?? 'Unknown Applicant'),
+                  title: Text(
+                    applicant['name']?.toString() ?? 'Unknown Applicant',
+                  ),
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Text(_getCourseName(app['course_id']?.toString())),
                       Text(
-                        app['course_id']?.toString() ?? 'No course specified',
-                      ),
-                      Text(
-                        applicant['email'] ?? 'No email',
+                        applicant['email']?.toString() ?? 'No email',
                         style: const TextStyle(fontSize: 12),
                       ),
                     ],
@@ -1428,7 +1820,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                       ),
                     ),
                   ),
-                  onTap: _showApplicationDetails,
+                  onTap: () => _showApplicationDetails(app),
                 );
               }).toList(),
             ),
@@ -1443,9 +1835,18 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Upcoming Events',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Upcoming Events',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            TextButton(
+              onPressed: _showAllEvents,
+              child: const Text('View All'),
+            ),
+          ],
         ),
         const SizedBox(height: 12),
         if (events.isEmpty)
@@ -1491,13 +1892,13 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                     ),
                     child: const Icon(Icons.event, color: Colors.blue),
                   ),
-                  title: Text(event['title'] ?? 'Untitled Event'),
+                  title: Text(event['title']?.toString() ?? 'Untitled Event'),
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (event['description'] != null)
                         Text(
-                          event['description'],
+                          event['description'].toString(),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -1509,7 +1910,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                           Text(
                             DateFormat(
                               'MMM d, yyyy',
-                            ).format(DateTime.parse(event['date'])),
+                            ).format(DateTime.parse(event['date'].toString())),
                             style: const TextStyle(fontSize: 12),
                           ),
                         ],
@@ -1526,10 +1927,6 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
   }
 
   void _showAddEventDialog() {
-    final titleController = TextEditingController();
-    final descriptionController = TextEditingController();
-    DateTime selectedDate = DateTime.now();
-
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -1539,7 +1936,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
-                controller: titleController,
+                controller: _eventTitleController,
                 decoration: const InputDecoration(
                   labelText: 'Event Title',
                   border: OutlineInputBorder(),
@@ -1548,7 +1945,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
               ),
               const SizedBox(height: 12),
               TextField(
-                controller: descriptionController,
+                controller: _eventDescriptionController,
                 decoration: const InputDecoration(
                   labelText: 'Description',
                   border: OutlineInputBorder(),
@@ -1559,16 +1956,20 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
               const SizedBox(height: 12),
               ListTile(
                 leading: const Icon(Icons.calendar_today),
-                title: Text(DateFormat('yyyy-MM-dd').format(selectedDate)),
+                title: Text(
+                  DateFormat('yyyy-MM-dd').format(_selectedEventDate),
+                ),
                 onTap: () async {
-                  final date = await showDatePicker(
+                  final DateTime? date = await showDatePicker(
                     context: context,
-                    initialDate: selectedDate,
+                    initialDate: _selectedEventDate,
                     firstDate: DateTime.now(),
                     lastDate: DateTime.now().add(const Duration(days: 365)),
                   );
                   if (date != null) {
-                    selectedDate = date;
+                    setState(() {
+                      _selectedEventDate = date;
+                    });
                   }
                 },
               ),
@@ -1577,22 +1978,47 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              _eventTitleController.clear();
+              _eventDescriptionController.clear();
+              Navigator.pop(context);
+            },
             child: const Text('Cancel'),
           ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _showSnackBar('Event added successfully', Colors.green);
-            },
-            child: const Text('Add Event'),
-          ),
+          ElevatedButton(onPressed: _addEvent, child: const Text('Add Event')),
         ],
       ),
     );
   }
 
-  void _showApplicationDetails() {
+  void _addEvent() {
+    final newEvent = {
+      'id': DateTime.now().toString(),
+      'title': _eventTitleController.text,
+      'description': _eventDescriptionController.text,
+      'date': _selectedEventDate.toIso8601String(),
+      'created_at': DateTime.now().toIso8601String(),
+    };
+
+    setState(() {
+      _events.add(newEvent);
+      _events.sort(
+        (a, b) => DateTime.parse(
+          a['date'].toString(),
+        ).compareTo(DateTime.parse(b['date'].toString())),
+      );
+    });
+
+    _eventTitleController.clear();
+    _eventDescriptionController.clear();
+    _selectedEventDate = DateTime.now();
+    Navigator.pop(context);
+    _showSnackBar('Event added successfully', Colors.green);
+  }
+
+  void _showApplicationDetails(Map<String, dynamic> application) {
+    final applicant = application['applicant'] ?? {};
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1629,9 +2055,18 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                     title: 'Applicant Information',
                     child: Column(
                       children: [
-                        _buildDetailRow('Name', 'John Doe'),
-                        _buildDetailRow('Email', 'john@example.com'),
-                        _buildDetailRow('Phone', '+1 234 567 890'),
+                        _buildDetailRow(
+                          'Name',
+                          applicant['name']?.toString() ?? 'N/A',
+                        ),
+                        _buildDetailRow(
+                          'Email',
+                          applicant['email']?.toString() ?? 'N/A',
+                        ),
+                        _buildDetailRow(
+                          'Phone',
+                          applicant['phone']?.toString() ?? 'N/A',
+                        ),
                       ],
                     ),
                   ),
@@ -1641,21 +2076,23 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                     title: 'Applied Course',
                     child: Column(
                       children: [
-                        _buildDetailRow('Course', 'Computer Science'),
-                        _buildDetailRow('Duration', '4 Years'),
-                        _buildDetailRow('Applied Date', '2024-01-15'),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildDetailCard(
-                    icon: Icons.description,
-                    title: 'Documents',
-                    child: Column(
-                      children: [
-                        _buildDocumentTile('Transcript', 'transcript.pdf'),
-                        _buildDocumentTile('Recommendation', 'rec.pdf'),
-                        _buildDocumentTile('Statement of Purpose', 'sop.pdf'),
+                        _buildDetailRow(
+                          'Course',
+                          _getCourseName(application['course_id']?.toString()),
+                        ),
+                        _buildDetailRow(
+                          'Applied Date',
+                          DateFormat('yyyy-MM-dd').format(
+                            DateTime.parse(
+                              application['created_at']?.toString() ??
+                                  DateTime.now().toIso8601String(),
+                            ),
+                          ),
+                        ),
+                        _buildDetailRow(
+                          'Status',
+                          application['status']?.toString() ?? 'pending',
+                        ),
                       ],
                     ),
                   ),
@@ -1678,6 +2115,9 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                 Expanded(
                   child: ElevatedButton(
                     onPressed: () {
+                      setState(() {
+                        application['status'] = 'approved';
+                      });
                       Navigator.pop(context);
                       _showSnackBar('Application approved', Colors.green);
                     },
@@ -1736,7 +2176,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        event['title'] ?? 'Event',
+                        event['title']?.toString() ?? 'Event',
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -1746,7 +2186,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                       Text(
                         DateFormat(
                           'EEEE, MMMM d, yyyy',
-                        ).format(DateTime.parse(event['date'])),
+                        ).format(DateTime.parse(event['date'].toString())),
                         style: TextStyle(color: Colors.grey.shade600),
                       ),
                     ],
@@ -1761,7 +2201,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
             ),
             const SizedBox(height: 8),
             Text(
-              event['description'] ?? 'No description available',
+              event['description']?.toString() ?? 'No description available',
               style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
             ),
           ],
@@ -1824,18 +2264,91 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
     );
   }
 
-  Widget _buildDocumentTile(String name, String file) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: const Icon(
-        Icons.insert_drive_file,
-        color: Colors.blue,
-        size: 20,
+  void _showAllEvents() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      title: Text(name, style: const TextStyle(fontSize: 13)),
-      trailing: Text(
-        file,
-        style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        height: MediaQuery.of(context).size.height * 0.8,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'All Events',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 20),
+            Expanded(
+              child: _events.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.event_busy,
+                            size: 48,
+                            color: Colors.grey.shade400,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No events',
+                            style: TextStyle(color: Colors.grey.shade600),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: _events.length,
+                      itemBuilder: (context, index) {
+                        final event = _events[index];
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: ListTile(
+                            leading: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(
+                                Icons.event,
+                                color: Colors.blue,
+                              ),
+                            ),
+                            title: Text(
+                              event['title']?.toString() ?? 'Untitled Event',
+                            ),
+                            subtitle: Text(
+                              DateFormat('MMM d, yyyy').format(
+                                DateTime.parse(event['date'].toString()),
+                              ),
+                            ),
+                            onTap: () {
+                              Navigator.pop(context);
+                              _showEventDetails(event);
+                            },
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1893,6 +2406,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                       itemBuilder: (context, index) {
                         final app = _applications[index];
                         final applicant = app['applicant'] ?? {};
+                        final status = app['status']?.toString() ?? 'pending';
                         return Card(
                           margin: const EdgeInsets.only(bottom: 8),
                           child: ListTile(
@@ -1907,20 +2421,38 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                                     .toUpperCase(),
                               ),
                             ),
-                            title: Text(applicant['name'] ?? 'Unknown'),
-                            subtitle: Text(applicant['email'] ?? ''),
-                            trailing: Chip(
-                              label: Text(
-                                (app['status'] ?? 'pending')
-                                    .toString()
-                                    .toUpperCase(),
-                                style: const TextStyle(fontSize: 10),
-                              ),
-                              backgroundColor: app['status'] == 'pending'
-                                  ? Colors.orange.shade100
-                                  : Colors.green.shade100,
+                            title: Text(
+                              applicant['name']?.toString() ?? 'Unknown',
                             ),
-                            onTap: _showApplicationDetails,
+                            subtitle: Text(
+                              applicant['email']?.toString() ?? '',
+                            ),
+                            trailing: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: status == 'pending'
+                                    ? Colors.orange.shade100
+                                    : Colors.green.shade100,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                status.toUpperCase(),
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: status == 'pending'
+                                      ? Colors.orange.shade700
+                                      : Colors.green.shade700,
+                                ),
+                              ),
+                            ),
+                            onTap: () {
+                              Navigator.pop(context);
+                              _showApplicationDetails(app);
+                            },
                           ),
                         );
                       },
@@ -1990,7 +2522,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                       ),
                     ),
                     title: Text(
-                      student['name'] ?? 'Unknown',
+                      student['name']?.toString() ?? 'Unknown',
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
@@ -2000,12 +2532,17 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const SizedBox(height: 4),
-                        Text('Roll: ${student['roll_number'] ?? 'N/A'}'),
-                        Text('Course: ${student['course'] ?? 'N/A'}'),
-                        Text('Email: ${student['email'] ?? 'N/A'}'),
+                        Text(
+                          'Roll: ${student['roll_number']?.toString() ?? 'N/A'}',
+                        ),
+                        Text(
+                          'Course: ${student['course']?.toString() ?? 'N/A'}',
+                        ),
+                        Text('Email: ${student['email']?.toString() ?? 'N/A'}'),
+                        Text('Phone: ${student['phone']?.toString() ?? 'N/A'}'),
                       ],
                     ),
-                    trailing: PopupMenuButton(
+                    trailing: PopupMenuButton<String>(
                       icon: const Icon(Icons.more_vert),
                       itemBuilder: (context) => [
                         const PopupMenuItem(
@@ -2031,12 +2568,283 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                             ],
                           ),
                         ),
+                        const PopupMenuItem(
+                          value: 'attendance',
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.check_circle,
+                                size: 18,
+                                color: Colors.green,
+                              ),
+                              SizedBox(width: 8),
+                              Text('View Attendance'),
+                            ],
+                          ),
+                        ),
                       ],
+                      onSelected: (String value) {
+                        if (value == 'edit') {
+                          _showEditStudentDialog(student);
+                        } else if (value == 'delete') {
+                          _showDeleteConfirmation(student);
+                        } else if (value == 'attendance') {
+                          _showStudentAttendance(student);
+                        }
+                      },
                     ),
                   ),
                 );
               },
             ),
+    );
+  }
+
+  void _showEditStudentDialog(Map<String, dynamic> student) {
+    _studentNameController.text = student['name']?.toString() ?? '';
+    _studentEmailController.text = student['email']?.toString() ?? '';
+    _studentRollController.text = student['roll_number']?.toString() ?? '';
+    _studentCourseController.text = student['course']?.toString() ?? '';
+    _studentPhoneController.text = student['phone']?.toString() ?? '';
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Student'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _studentNameController,
+                decoration: const InputDecoration(
+                  labelText: 'Full Name',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _studentEmailController,
+                decoration: const InputDecoration(
+                  labelText: 'Email',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _studentRollController,
+                decoration: const InputDecoration(
+                  labelText: 'Roll Number',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _studentCourseController,
+                decoration: const InputDecoration(
+                  labelText: 'Course',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _studentPhoneController,
+                decoration: const InputDecoration(
+                  labelText: 'Phone',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              _clearStudentControllers();
+              Navigator.pop(context);
+            },
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                student['name'] = _studentNameController.text;
+                student['email'] = _studentEmailController.text;
+                student['roll_number'] = _studentRollController.text;
+                student['course'] = _studentCourseController.text;
+                student['phone'] = _studentPhoneController.text;
+              });
+              _clearStudentControllers();
+              Navigator.pop(context);
+              _showSnackBar('Student updated successfully', Colors.green);
+            },
+            child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeleteConfirmation(Map<String, dynamic> student) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Student'),
+        content: Text(
+          'Are you sure you want to delete ${student['name']?.toString()}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                _students.removeWhere((s) => s['id'] == student['id']);
+              });
+              Navigator.pop(context);
+              _showSnackBar('Student deleted successfully', Colors.red);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showStudentAttendance(Map<String, dynamic> student) {
+    final studentAttendance = _attendance
+        .where((a) => a['student_id'] == student['id'])
+        .toList();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        height: MediaQuery.of(context).size.height * 0.7,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 30,
+                  backgroundColor: Colors.blue.shade100,
+                  child: Text(
+                    (student['name']?.toString().substring(0, 1) ?? '?')
+                        .toUpperCase(),
+                    style: TextStyle(fontSize: 24, color: Colors.blue.shade700),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        student['name']?.toString() ?? 'Unknown',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        'Roll: ${student['roll_number']?.toString() ?? 'N/A'}',
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 24),
+            Text(
+              'Attendance Record (${studentAttendance.length} days)',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: studentAttendance.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.calendar_today,
+                            size: 48,
+                            color: Colors.grey.shade400,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No attendance records',
+                            style: TextStyle(color: Colors.grey.shade600),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: studentAttendance.length,
+                      itemBuilder: (context, index) {
+                        final record = studentAttendance[index];
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: ListTile(
+                            leading: Icon(
+                              record['status'] == 'present'
+                                  ? Icons.check_circle
+                                  : Icons.cancel,
+                              color: record['status'] == 'present'
+                                  ? Colors.green
+                                  : Colors.red,
+                            ),
+                            title: Text(record['date']?.toString() ?? ''),
+                            trailing: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: record['status'] == 'present'
+                                    ? Colors.green.shade50
+                                    : Colors.red.shade50,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                (record['status']?.toString() ?? '')
+                                    .toUpperCase(),
+                                style: TextStyle(
+                                  color: record['status'] == 'present'
+                                      ? Colors.green
+                                      : Colors.red,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -2077,6 +2885,10 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
               itemCount: _courses.length,
               itemBuilder: (context, index) {
                 final course = _courses[index];
+                final studentsInCourse = _students
+                    .where((s) => s['course'] == course['id'])
+                    .length;
+
                 return Card(
                   margin: const EdgeInsets.only(bottom: 12),
                   shape: RoundedRectangleBorder(
@@ -2093,7 +2905,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                       child: Icon(Icons.book, color: Colors.green.shade700),
                     ),
                     title: Text(
-                      course['name'] ?? 'Unknown',
+                      course['name']?.toString() ?? 'Unknown',
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
@@ -2103,11 +2915,14 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const SizedBox(height: 4),
-                        Text('Code: ${course['code'] ?? 'N/A'}'),
-                        Text('Duration: ${course['duration'] ?? 'N/A'} months'),
+                        Text('Code: ${course['code']?.toString() ?? 'N/A'}'),
+                        Text(
+                          'Duration: ${course['duration']?.toString() ?? 'N/A'} months',
+                        ),
+                        Text('Students: $studentsInCourse enrolled'),
                       ],
                     ),
-                    trailing: PopupMenuButton(
+                    trailing: PopupMenuButton<String>(
                       icon: const Icon(Icons.more_vert),
                       itemBuilder: (context) => [
                         const PopupMenuItem(
@@ -2134,6 +2949,13 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                           ),
                         ),
                       ],
+                      onSelected: (String value) {
+                        if (value == 'edit') {
+                          _showEditCourseDialog(course);
+                        } else if (value == 'delete') {
+                          _showDeleteCourseConfirmation(course);
+                        }
+                      },
                     ),
                   ),
                 );
@@ -2142,8 +2964,132 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
     );
   }
 
+  void _showEditCourseDialog(Map<String, dynamic> course) {
+    _courseNameController.text = course['name']?.toString() ?? '';
+    _courseCodeController.text = course['code']?.toString() ?? '';
+    _courseDurationController.text = course['duration']?.toString() ?? '';
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Course'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _courseNameController,
+                decoration: const InputDecoration(
+                  labelText: 'Course Name',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _courseCodeController,
+                decoration: const InputDecoration(
+                  labelText: 'Course Code',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _courseDurationController,
+                decoration: const InputDecoration(
+                  labelText: 'Duration (months)',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              _courseNameController.clear();
+              _courseCodeController.clear();
+              _courseDurationController.clear();
+              Navigator.pop(context);
+            },
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                course['name'] = _courseNameController.text;
+                course['code'] = _courseCodeController.text;
+                course['duration'] = _courseDurationController.text;
+              });
+              _courseNameController.clear();
+              _courseCodeController.clear();
+              _courseDurationController.clear();
+              Navigator.pop(context);
+              _showSnackBar('Course updated successfully', Colors.green);
+            },
+            child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeleteCourseConfirmation(Map<String, dynamic> course) {
+    final studentsInCourse = _students
+        .where((s) => s['course'] == course['id'])
+        .length;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Course'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to delete ${course['name']?.toString()}?',
+            ),
+            if (studentsInCourse > 0) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Warning: $studentsInCourse student(s) are enrolled in this course.',
+                style: const TextStyle(color: Colors.red, fontSize: 12),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                _courses.removeWhere((c) => c['id'] == course['id']);
+              });
+              Navigator.pop(context);
+              _showSnackBar('Course deleted successfully', Colors.red);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ============ ATTENDANCE VIEW ============
   Widget _buildAttendanceView() {
+    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final todayAttendance = _attendance
+        .where((a) => a['date'] == today)
+        .toList();
+    final presentCount = todayAttendance
+        .where((a) => a['status'] == 'present')
+        .length;
+
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       body: _attendance.isEmpty
@@ -2189,12 +3135,22 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      Text(
-                        'Present: ${_attendance.where((a) => a['status'] == 'present').length}/${_attendance.length}',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.green.shade700,
-                          fontWeight: FontWeight.w600,
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          'Present: $presentCount/${_students.length}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.green.shade700,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ],
@@ -2203,11 +3159,11 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                 Expanded(
                   child: ListView.builder(
                     padding: const EdgeInsets.all(16),
-                    itemCount: _attendance.length,
+                    itemCount: todayAttendance.length,
                     itemBuilder: (context, index) {
-                      final record = _attendance[index];
+                      final record = todayAttendance[index];
                       final student = record['student'] ?? {};
-                      final status = record['status'] ?? 'absent';
+                      final status = record['status']?.toString() ?? 'absent';
                       return Card(
                         margin: const EdgeInsets.only(bottom: 8),
                         shape: RoundedRectangleBorder(
@@ -2227,9 +3183,9 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                                   : Colors.red,
                             ),
                           ),
-                          title: Text(student['name'] ?? 'Unknown'),
+                          title: Text(student['name']?.toString() ?? 'Unknown'),
                           subtitle: Text(
-                            'Roll: ${student['roll_number'] ?? 'N/A'}',
+                            'Roll: ${student['roll_number']?.toString() ?? 'N/A'}',
                           ),
                           trailing: Container(
                             padding: const EdgeInsets.symmetric(
@@ -2300,7 +3256,8 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                       backgroundColor: Colors.blue.shade100,
                       child: Text(
                         _collegeProfile?['name']
-                                ?.substring(0, 1)
+                                ?.toString()
+                                .substring(0, 1)
                                 .toUpperCase() ??
                             user?.email?.substring(0, 1).toUpperCase() ??
                             'C',
@@ -2314,7 +3271,7 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    _collegeProfile?['name'] ?? 'College Name',
+                    _collegeProfile?['name']?.toString() ?? 'College Name',
                     style: const TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
@@ -2339,16 +3296,16 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                   children: [
                     _buildProfileRow(
                       'Name',
-                      _collegeProfile?['name'] ?? 'Not set',
+                      _collegeProfile?['name']?.toString() ?? 'Not set',
                     ),
                     _buildProfileRow('Email', user?.email ?? 'Not set'),
                     _buildProfileRow(
                       'Phone',
-                      _collegeProfile?['phone'] ?? 'Not set',
+                      _collegeProfile?['phone']?.toString() ?? 'Not set',
                     ),
                     _buildProfileRow(
                       'Address',
-                      _collegeProfile?['address'] ?? 'Not set',
+                      _collegeProfile?['address']?.toString() ?? 'Not set',
                     ),
                   ],
                 ),
@@ -2367,11 +3324,21 @@ class _CollegeDashboardState extends State<CollegeDashboard> {
                     ),
                     _buildProfileRow(
                       'Pending Applications',
-                      _applications.length.toString(),
+                      _applications
+                          .where((a) => a['status'] == 'pending')
+                          .length
+                          .toString(),
                     ),
                     _buildProfileRow(
                       'Upcoming Events',
-                      _events.length.toString(),
+                      _events
+                          .where(
+                            (e) => DateTime.parse(
+                              e['date'].toString(),
+                            ).isAfter(DateTime.now()),
+                          )
+                          .length
+                          .toString(),
                     ),
                   ],
                 ),
