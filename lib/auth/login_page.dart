@@ -4,6 +4,7 @@ import '../dashboards/student_dashboard.dart';
 import '../dashboards/college_dashboard.dart';
 import '../dashboards/admin_dashboard.dart';
 import 'register_page.dart';
+import 'admin_login.dart';
 
 class LoginPage extends StatefulWidget {
   final String role;
@@ -110,12 +111,14 @@ class _LoginPageState extends State<LoginPage> {
             );
             break;
           case 'admin':
-            Navigator.pushAndRemoveUntil(
+            // Admin must go through AdminLogin which performs the admin_users check.
+            await Supabase.instance.client.auth.signOut();
+            if (!mounted) return;
+            Navigator.pushReplacement(
               context,
-              MaterialPageRoute(builder: (_) => const AdminDashboard()),
-              (route) => false,
+              MaterialPageRoute(builder: (_) => const AdminLogin()),
             );
-            break;
+            return;
           default:
             throw Exception('Unknown role');
         }

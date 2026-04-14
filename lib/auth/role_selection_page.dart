@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'login_page.dart';
 import 'register_page.dart';
+import 'admin_login.dart';
 
 class RoleSelectionPage extends StatelessWidget {
   const RoleSelectionPage({super.key});
@@ -194,7 +195,7 @@ class RoleSelectionPage extends StatelessWidget {
                 description: 'System administration',
                 icon: Icons.admin_panel_settings,
                 color: Colors.deepPurple,
-                onLogin: () => _navigateToLogin(context, 'admin'),
+                onLogin: () => _navigateToAdminLogin(context),
               ),
 
               const SizedBox(height: 30),
@@ -222,6 +223,13 @@ class RoleSelectionPage extends StatelessWidget {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => LoginPage(role: role)),
+    );
+  }
+
+  void _navigateToAdminLogin(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AdminLogin()),
     );
   }
 }

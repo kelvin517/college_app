@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'auth/auth_gate.dart';
-import 'screens/admin_login.dart';
+import 'auth/admin_login.dart';
 import 'dashboards/admin_dashboard.dart';
 import 'services/supabase_service.dart';
 
